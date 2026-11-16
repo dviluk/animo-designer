@@ -36,7 +36,7 @@ export async function checkCloudAvailability(address: string): Promise<void> {
   const choice = new URL(address).searchParams.get(PREVIEW_PARAM)
   if (choice === 'preview') preview.value = true
   else if (choice === 'off') preview.value = false
-  // A build that reaches no third party never asks; the last answer stands.
+  // A build with the check off never asks; the last answer stands.
   if (!OFFICIAL_CLOUD_CHECK) return
   // Unreachable, or not public yet: the last answer stands.
   const discovery = await discoverCloudServer(OFFICIAL_CLOUD_URL).catch(() => null)

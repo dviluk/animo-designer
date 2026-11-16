@@ -10,7 +10,8 @@ settings files, its data folders and its secrets.
   That asks the hosted server, `OFFICIAL_CLOUD_URL` (`https://cloud.openpencil.dev` by default), whether it lists itself
   for this editor version. It carries no document, account or id, but it is a request to a third party from the
   browser of whoever opens our server.
-- **Why we change it:** our server must make no call to a third party (GitHub excepted), and its telemetry is off.
+- **Why we change it:** our server keeps nothing on a third party's servers (GitHub excepted), and its telemetry is
+  off. This is the one call to the official server the editor makes unasked.
 - **The setting:** `VITE_OPENPENCIL_OFFICIAL_CLOUD_CHECK=off`, read at build time like `VITE_OPENPENCIL_CLOUD`.
   - Without it, the editor behaves exactly as upstream's.
   - With it off, `checkCloudAvailability()` still reads the `?cloud=` switch but never asks the official server.
@@ -20,6 +21,20 @@ settings files, its data folders and its secrets.
   - `src/env.d.ts`: its declaration;
   - `src/constants.ts`: `OFFICIAL_CLOUD_CHECK`, true when the define is missing;
   - `src/app/cloud/availability.ts`: the early return.
+
+## What still reaches outside
+
+This change covers the official server only. With it, the served editor still makes these requests:
+
+- **On its own:**
+  - the font list from `api.fontsource.org` on every start, while online fonts are on, as they are by default
+    (`src/app/editor/fonts/index.ts`);
+  - font files from `cdn.jsdelivr.net` when a document uses a font other than the bundled Inter, or holds Chinese,
+    Japanese, Korean or Arabic text.
+- **When a message is opened:** the server's e-mails show their logo from `openpencil.dev`
+  (`packages/cloud/src/email/templates/brand.ts`).
+- **Only when a person chooses them:** icons, AI, stock photos, live rooms for files on the device, and the official
+  server in the connect dialog.
 
 ## Building the server image
 
