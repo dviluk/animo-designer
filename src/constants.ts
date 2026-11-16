@@ -89,6 +89,12 @@ export const CLOUD_WAITLIST_URL = 'https://openpencil.dev/#cloud'
 export const OFFICIAL_CLOUD_URL =
   (typeof __OPENPENCIL_OFFICIAL_CLOUD_URL__ === 'string' && __OPENPENCIL_OFFICIAL_CLOUD_URL__) ||
   'https://cloud.openpencil.dev'
+/**
+ * Whether the editor asks the official server on start whether it is listed. A build that must
+ * reach no third party turns it off; a build without the define keeps the check.
+ */
+export const OFFICIAL_CLOUD_CHECK =
+  typeof __OPENPENCIL_OFFICIAL_CLOUD_CHECK__ !== 'boolean' || __OPENPENCIL_OFFICIAL_CLOUD_CHECK__
 /** Whether this is the editor a Cloud server serves on its own address (`bun run build:cloud`). */
 export const IS_CLOUD_SITE =
   typeof __OPENPENCIL_CLOUD_SITE__ === 'boolean' && __OPENPENCIL_CLOUD_SITE__

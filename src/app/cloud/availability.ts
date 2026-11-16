@@ -4,7 +4,7 @@ import { computed, ref } from 'vue'
 import { isEditorVersionAtLeast } from '@open-pencil/cloud/contract'
 
 import { APP_VERSION } from '@/app/runtime/version'
-import { IS_BROWSER, IS_CLOUD_SITE, OFFICIAL_CLOUD_URL } from '@/constants'
+import { IS_BROWSER, IS_CLOUD_SITE, OFFICIAL_CLOUD_CHECK, OFFICIAL_CLOUD_URL } from '@/constants'
 
 import { discoverCloudServer } from './sessions/connection'
 
@@ -36,6 +36,8 @@ export async function checkCloudAvailability(address: string): Promise<void> {
   const choice = new URL(address).searchParams.get(PREVIEW_PARAM)
   if (choice === 'preview') preview.value = true
   else if (choice === 'off') preview.value = false
+  // A build that reaches no third party never asks; the last answer stands.
+  if (!OFFICIAL_CLOUD_CHECK) return
   // Unreachable, or not public yet: the last answer stands.
   const discovery = await discoverCloudServer(OFFICIAL_CLOUD_URL).catch(() => null)
   if (discovery) listedFrom.value = discovery.listing?.minimumEditorVersion ?? null

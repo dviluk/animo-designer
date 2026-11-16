@@ -44,6 +44,8 @@ export default defineConfig(async ({ command, mode }) => {
   const env = loadEnv(mode, __dirname, 'VITE_')
   // `VITE_OPENPENCIL_CLOUD=off` builds the editor without OpenPencil Cloud.
   const cloud = env.VITE_OPENPENCIL_CLOUD !== 'off'
+  // `VITE_OPENPENCIL_OFFICIAL_CLOUD_CHECK=off`: the editor never asks the official server on start.
+  const officialCloudCheck = env.VITE_OPENPENCIL_OFFICIAL_CLOUD_CHECK !== 'off'
   // Agents automate the editor's own development server; a Cloud site, built or served, has none.
   const automation = !metrics && !cloudSite
   await Promise.all([ensureBrandAssets(['web']), metrics ? undefined : ensureDemoDocument()])
@@ -59,6 +61,7 @@ export default defineConfig(async ({ command, mode }) => {
       __OPENPENCIL_OFFICIAL_CLOUD_URL__: JSON.stringify(
         env.VITE_OPENPENCIL_OFFICIAL_CLOUD_URL ?? null
       ),
+      __OPENPENCIL_OFFICIAL_CLOUD_CHECK__: JSON.stringify(officialCloudCheck),
       __OPENPENCIL_LOCAL_AUTOMATION_TOKEN__: JSON.stringify(
         automation ? localAutomationToken(command) : null
       ),
