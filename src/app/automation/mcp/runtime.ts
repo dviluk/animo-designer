@@ -3,6 +3,7 @@ import { reactive } from 'vue'
 import { connectAutomation } from '@/app/automation/bridge/server'
 import type { EditorStore } from '@/app/editor/active-store'
 import { isTauri } from '@/app/tauri/env'
+import { AGENT_EDITOR } from '@/constants'
 
 import { mcpFailure, type MCPFailure } from './failure'
 import { getAutomationHealthFailure, type AutomationHealth } from './health'
@@ -211,9 +212,12 @@ export function createMCPRuntimeService(dependencies: MCPRuntimeDependencies) {
   }
 }
 
-/** The local server runs with the desktop app, and in development with the dev server. */
+/**
+ * The local server runs with the desktop app, in development with the dev server, and beside the
+ * agents' editor.
+ */
 export function localMCPAvailable(): boolean {
-  return import.meta.env.DEV || isTauri()
+  return import.meta.env.DEV || isTauri() || AGENT_EDITOR
 }
 
 const appMCPRuntime = createMCPRuntimeService({

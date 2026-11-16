@@ -12,6 +12,7 @@ import { decodeTauriStderr } from '@/app/shell/ui'
 import { canRunHostProcesses } from '@/app/tauri/capabilities'
 import { resolvePlatformCommand } from '@/app/tauri/command'
 import { isTauri } from '@/app/tauri/env'
+import { AGENT_EDITOR } from '@/constants'
 
 import { DEV_MCP_RESTART_PATH, type DevMCPConfiguration } from './dev-control'
 import {
@@ -186,6 +187,32 @@ async function readExistingServerHandle(): Promise<AutomationServerHandle | null
   return { disconnect: noop, authToken: token, managed: false }
 }
 
+/** Where the agents' editor's own server hands it the token of the agent server beside it. */
+export const AGENT_EDITOR_TOKEN_PATH = '/__agents/token'
+const AGENT_EDITOR_TOKEN = /^[0-9a-f]{64}$/
+
+/**
+ * The agents' editor reads its agent server's token from its own origin, so no token is built into
+ * the bundle; anything but a token there (a page, an error) leaves the editor without agents.
+ */
+export async function readAgentEditorHandle(): Promise<AutomationServerHandle | null> {
+  const response = await fetch(AGENT_EDITOR_TOKEN_PATH, { cache: 'no-store' })
+  const token = response.ok ? (await response.text()).trim() : ''
+  if (!AGENT_EDITOR_TOKEN.test(token)) {
+    return rememberStartupError(
+      new MCPStartupError(
+        `The agents' editor found no agent server token at ${AGENT_EDITOR_TOKEN_PATH}.`,
+        mcpFailure('unreachable', AGENT_EDITOR_TOKEN_PATH)
+      )
+    )
+  }
+  const health = await probeAutomationHealth(token)
+  if (!health) return null
+  assertCompatibleMCPVersion(health)
+  runtimeAutomationAuthToken = token
+  return { disconnect: noop, authToken: token, managed: false }
+}
+
 async function configureDevMCP(): Promise<AutomationServerHandle> {
   if (!DEV_AUTOMATION_AUTH_TOKEN) throw new Error('MCP development control token is unavailable')
   const configuration: DevMCPConfiguration = {
@@ -240,6 +267,7 @@ async function startMCPIfNeeded(timing: MCPStartupTiming): Promise<AutomationSer
   runtimeAutomationStartupError = null
   runtimeAutomationStartupFailure = null
   if (import.meta.env.DEV) return configureDevMCP()
+  if (AGENT_EDITOR) return readAgentEditorHandle()
   if (!isTauri()) return null
 
   const existing = await readExistingServerHandle()

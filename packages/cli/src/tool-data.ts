@@ -1,5 +1,6 @@
 import { getCanvasKit } from '@open-pencil/core/canvaskit'
 import { FigmaAPI } from '@open-pencil/core/figma-api'
+import { createLocalIconProvider, loadLucideIconSet } from '@open-pencil/core/icons'
 import { pendingFigPageOfNode } from '@open-pencil/core/io/formats/fig'
 import {
   createCanvasKitRasterCodec,
@@ -22,6 +23,15 @@ import {
 } from '#cli/headless'
 
 /**
+ * `OPENPENCIL_LOCAL_ICONS=lucide`: tools draw icons only from the bundled Lucide set and fetch
+ * none, so a run with no network still draws them.
+ */
+const localIcons =
+  process.env.OPENPENCIL_LOCAL_ICONS === 'lucide'
+    ? createLocalIconProvider(async () => [await loadLucideIconSet()])
+    : null
+
+/**
  * A Figma API over a headless document, with CanvasKit raster export and pixel decoding, and
  * the renderer that measures text measuring geometry, booleans, and flatten too. A page not
  * loaded yet loads with its fonts when the script asks for it, as in Figma's dynamic-page mode.
@@ -31,6 +41,7 @@ export async function createHeadlessFigma(graph: SceneGraph): Promise<FigmaAPI> 
     loadPage: (id) => loadDocumentPage(graph, id),
     pageOfNode: (id) => pendingFigPageOfNode(graph, id)
   })
+  if (localIcons) figma.icons = localIcons
   const renderer = await measureTextHeadlessly()
   // The process's one renderer keeps paths by layer id, which another document's layers share.
   renderer.nodePaths.clear()

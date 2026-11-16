@@ -16,6 +16,10 @@ declare const __OPENPENCIL_OFFICIAL_CLOUD_URL__: string | null
 declare const __OPENPENCIL_OFFICIAL_CLOUD_CHECK__: boolean
 /** `VITE_OPENPENCIL_ONLINE_FONTS=off`: online fonts start off; Settings can still turn them on. */
 declare const __OPENPENCIL_ONLINE_FONTS__: boolean
+/** `VITE_OPENPENCIL_LOCAL_ICONS=lucide`: icons come only from the bundled Lucide set. */
+declare const __OPENPENCIL_LOCAL_ICONS__: boolean
+/** `VITE_OPENPENCIL_AGENT_EDITOR=on`: the agents' editor, paired with an agent server beside it. */
+declare const __OPENPENCIL_AGENT_EDITOR__: boolean
 /** The donation page `.github/FUNDING.yml` names first, or `null` when the build has none. */
 declare const __OPENPENCIL_DONATION_URL__: string | null
 declare const __OPENPENCIL_LOCAL_AUTOMATION_TOKEN__: string | null

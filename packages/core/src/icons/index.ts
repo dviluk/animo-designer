@@ -24,6 +24,12 @@ export { createMaterialSymbolsProvider } from './material-symbols/provider'
 export { MATERIAL_SYMBOLS_PREFIXES } from './material-symbols/font'
 export { createIconSetsProvider, type IconSetSource, type IconSetsOptions } from './sets'
 export {
+  createLocalIconifyClient,
+  createLocalIconProvider,
+  loadLucideIconSet,
+  type LocalIconSet
+} from './local'
+export {
   createSFSymbolsProvider,
   SF_SYMBOLS_PREFIX,
   type SFSymbolsHost

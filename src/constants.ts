@@ -96,6 +96,18 @@ export const OFFICIAL_CLOUD_URL =
  */
 export const OFFICIAL_CLOUD_CHECK =
   typeof __OPENPENCIL_OFFICIAL_CLOUD_CHECK__ !== 'boolean' || __OPENPENCIL_OFFICIAL_CLOUD_CHECK__
+/**
+ * Whether icons come only from the bundled Lucide set, so no icon is fetched from Iconify or
+ * Google; a build without the define keeps upstream's sources.
+ */
+export const LOCAL_ICONS =
+  typeof __OPENPENCIL_LOCAL_ICONS__ === 'boolean' && __OPENPENCIL_LOCAL_ICONS__
+/**
+ * Whether this is the agents' editor, which its own server pairs with an agent server on the same
+ * machine; the editor a person loads is built without it.
+ */
+export const AGENT_EDITOR =
+  typeof __OPENPENCIL_AGENT_EDITOR__ === 'boolean' && __OPENPENCIL_AGENT_EDITOR__
 /** Whether this is the editor a Cloud server serves on its own address (`bun run build:cloud`). */
 export const IS_CLOUD_SITE =
   typeof __OPENPENCIL_CLOUD_SITE__ === 'boolean' && __OPENPENCIL_CLOUD_SITE__

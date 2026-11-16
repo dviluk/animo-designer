@@ -48,8 +48,15 @@ export default defineConfig(async ({ command, mode }) => {
   const officialCloudCheck = env.VITE_OPENPENCIL_OFFICIAL_CLOUD_CHECK !== 'off'
   // `VITE_OPENPENCIL_ONLINE_FONTS=off`: online fonts start off; Settings can still turn them on.
   const onlineFonts = env.VITE_OPENPENCIL_ONLINE_FONTS !== 'off'
-  // Agents automate the editor's own development server; a Cloud site, built or served, has none.
-  const automation = !metrics && !cloudSite
+  // `VITE_OPENPENCIL_LOCAL_ICONS=lucide`: icons come from the bundled Lucide set, and no other set
+  // is fetched.
+  const localIcons = env.VITE_OPENPENCIL_LOCAL_ICONS === 'lucide'
+  // `VITE_OPENPENCIL_AGENT_EDITOR=on`: a Cloud site is automated too, built or served, for the
+  // agents' editor that only the agents' own browser loads; the site a person loads never sets it.
+  const agentEditor = cloudSite && env.VITE_OPENPENCIL_AGENT_EDITOR === 'on'
+  // Agents automate the editor's own development server; a Cloud site, built or served, has none
+  // unless it is the agents' editor.
+  const automation = (!metrics && !cloudSite) || agentEditor
   await Promise.all([ensureBrandAssets(['web']), metrics ? undefined : ensureDemoDocument()])
   const outDir = metrics ? 'dist-metrics/admin' : cloudSite ? 'dist-cloud' : 'dist'
   return {
@@ -65,6 +72,8 @@ export default defineConfig(async ({ command, mode }) => {
       ),
       __OPENPENCIL_OFFICIAL_CLOUD_CHECK__: JSON.stringify(officialCloudCheck),
       __OPENPENCIL_ONLINE_FONTS__: JSON.stringify(onlineFonts),
+      __OPENPENCIL_LOCAL_ICONS__: JSON.stringify(localIcons),
+      __OPENPENCIL_AGENT_EDITOR__: JSON.stringify(agentEditor),
       __OPENPENCIL_LOCAL_AUTOMATION_TOKEN__: JSON.stringify(
         automation ? localAutomationToken(command) : null
       ),
