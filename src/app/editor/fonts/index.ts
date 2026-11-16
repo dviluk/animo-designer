@@ -31,8 +31,12 @@ if (typeof navigator !== 'undefined') {
 
 export type FontProviderSettings = Record<WebFontProviderId, boolean>
 
-/** Online fonts are on until turned off in Settings. */
-export const DEFAULT_ONLINE_FONTS = true
+/**
+ * Online fonts are on until turned off in Settings, unless the build starts them off: with them
+ * off, the editor lists and fetches no font from a provider, fallbacks included.
+ */
+export const DEFAULT_ONLINE_FONTS =
+  typeof __OPENPENCIL_ONLINE_FONTS__ !== 'boolean' || __OPENPENCIL_ONLINE_FONTS__
 export const onlineFontsEnabled = useLocalStorage('op-online-fonts-enabled', DEFAULT_ONLINE_FONTS)
 export const fontProviderSettings = useLocalStorage<FontProviderSettings>(
   'op-font-providers',

@@ -14,6 +14,8 @@ declare const __OPENPENCIL_CLOUD_SITE__: boolean
 declare const __OPENPENCIL_OFFICIAL_CLOUD_URL__: string | null
 /** `VITE_OPENPENCIL_OFFICIAL_CLOUD_CHECK=off`: the editor never asks the official server on start. */
 declare const __OPENPENCIL_OFFICIAL_CLOUD_CHECK__: boolean
+/** `VITE_OPENPENCIL_ONLINE_FONTS=off`: online fonts start off; Settings can still turn them on. */
+declare const __OPENPENCIL_ONLINE_FONTS__: boolean
 /** The donation page `.github/FUNDING.yml` names first, or `null` when the build has none. */
 declare const __OPENPENCIL_DONATION_URL__: string | null
 declare const __OPENPENCIL_LOCAL_AUTOMATION_TOKEN__: string | null

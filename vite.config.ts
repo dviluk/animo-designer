@@ -46,6 +46,8 @@ export default defineConfig(async ({ command, mode }) => {
   const cloud = env.VITE_OPENPENCIL_CLOUD !== 'off'
   // `VITE_OPENPENCIL_OFFICIAL_CLOUD_CHECK=off`: the editor never asks the official server on start.
   const officialCloudCheck = env.VITE_OPENPENCIL_OFFICIAL_CLOUD_CHECK !== 'off'
+  // `VITE_OPENPENCIL_ONLINE_FONTS=off`: online fonts start off; Settings can still turn them on.
+  const onlineFonts = env.VITE_OPENPENCIL_ONLINE_FONTS !== 'off'
   // Agents automate the editor's own development server; a Cloud site, built or served, has none.
   const automation = !metrics && !cloudSite
   await Promise.all([ensureBrandAssets(['web']), metrics ? undefined : ensureDemoDocument()])
@@ -62,6 +64,7 @@ export default defineConfig(async ({ command, mode }) => {
         env.VITE_OPENPENCIL_OFFICIAL_CLOUD_URL ?? null
       ),
       __OPENPENCIL_OFFICIAL_CLOUD_CHECK__: JSON.stringify(officialCloudCheck),
+      __OPENPENCIL_ONLINE_FONTS__: JSON.stringify(onlineFonts),
       __OPENPENCIL_LOCAL_AUTOMATION_TOKEN__: JSON.stringify(
         automation ? localAutomationToken(command) : null
       ),

@@ -1,10 +1,11 @@
 # animo-designer: what this fork changes, and how its server image is built
 
 `dviluk/animo-designer` mirrors `open-pencil/open-pencil` for one self-hosted Cloud server on one of our own machines.
-It carries one change of its own. Everything else of ours lives outside this repository: the server's compose and
-settings files, its data folders and its secrets.
+It carries two small changes of its own, each behind a build setting whose absence keeps upstream's behaviour.
+Everything else of ours lives outside this repository: the server's compose and settings files, its data folders and its
+secrets.
 
-## The change: the editor need not ask the official server on start
+## The first change: the editor need not ask the official server on start
 
 - **What upstream does:** every start of the editor calls `checkCloudAvailability()` (`src/app/cloud/sessions/startup.ts`).
   That asks the hosted server, `OFFICIAL_CLOUD_URL` (`https://cloud.openpencil.dev` by default), whether it lists itself
@@ -22,19 +23,27 @@ settings files, its data folders and its secrets.
   - `src/constants.ts`: `OFFICIAL_CLOUD_CHECK`, true when the define is missing;
   - `src/app/cloud/availability.ts`: the early return.
 
+## The second change: online fonts may start off
+
+- **What upstream does:** online fonts are on by default. Every start lists the font families at `api.fontsource.org`,
+  and a document using a font other than the bundled Inter, or holding Chinese, Japanese, Korean or Arabic text, loads
+  its faces from `cdn.jsdelivr.net`.
+- **The setting:** `VITE_OPENPENCIL_ONLINE_FONTS=off`, read at build time.
+  - Without it, online fonts are on by default, as upstream's.
+  - With it off, `DEFAULT_ONLINE_FONTS` is false: no font provider is enabled, so the editor lists and fetches no font
+    from outside. Settings can still turn online fonts on, and its reset goes back to off.
+- **The files:** `vite.config.ts` (the define `__OPENPENCIL_ONLINE_FONTS__`), `src/env.d.ts`, and
+  `src/app/editor/fonts/index.ts` (`DEFAULT_ONLINE_FONTS`).
+
 ## What still reaches outside
 
-This change covers the official server only. With it, the served editor still makes these requests:
+With both settings off, the served editor still makes these requests:
 
-- **On its own:**
-  - the font list from `api.fontsource.org` on every start, while online fonts are on, as they are by default
-    (`src/app/editor/fonts/index.ts`);
-  - font files from `cdn.jsdelivr.net` when a document uses a font other than the bundled Inter, or holds Chinese,
-    Japanese, Korean or Arabic text.
-- **When a message is opened:** the server's e-mails show their logo from `openpencil.dev`
-  (`packages/cloud/src/email/templates/brand.ts`).
-- **Only when a person chooses them:** icons, AI, stock photos, live rooms for files on the device, and the official
-  server in the connect dialog.
+- **When a message is opened in a browser:** the server's e-mails show their logo from `openpencil.dev`
+  (`packages/cloud/src/email/templates/brand.ts`). We accept it: our mails are read through the mail catcher's API, which
+  loads no image.
+- **Only when a person chooses them:** online fonts turned on in Settings, icons, AI, stock photos, live rooms for files
+  on the device, and the official server in the connect dialog.
 
 ## Building the server image
 
@@ -43,11 +52,11 @@ The image is upstream's `packages/cloud/deploy/Dockerfile`, unchanged. Two steps
 1. **The HTML engine's WebAssembly module.** The image has no Rust, so the module is built first and travels in the
    build context: `bun run --filter @open-pencil/html-engine build:wasm` (Rust from `rust-toolchain.toml`, target
    `wasm32-unknown-unknown`).
-2. **The image,** with the setting in a git-ignored `.env.cloud.local` at the root, which `vite build --mode cloud`
+2. **The image,** with both settings in a git-ignored `.env.cloud.local` at the root, which `vite build --mode cloud`
    reads. The build context leaves out no `.env*` file:
 
    ```bash
-   printf 'VITE_OPENPENCIL_OFFICIAL_CLOUD_CHECK=off\n' > .env.cloud.local
+   printf 'VITE_OPENPENCIL_OFFICIAL_CLOUD_CHECK=off\nVITE_OPENPENCIL_ONLINE_FONTS=off\n' > .env.cloud.local
    docker build -f packages/cloud/deploy/Dockerfile -t animo-designer-cloud:<version>-<sha> .
    ```
 
