@@ -5,6 +5,7 @@ import { createsComponentCycle } from '@open-pencil/scene-graph/instances'
 
 import { assertNodeEditable } from '#core/editor/capabilities'
 import { prepareSlotEdits } from '#core/editor/components/slots'
+import { fitEnclosingGroupsWithUndo } from '#core/editor/structure/group/bounds'
 import type { EditorContext } from '#core/editor/types'
 
 export function createStructureReorderActions(ctx: EditorContext) {
@@ -25,6 +26,11 @@ export function createStructureReorderActions(ctx: EditorContext) {
   }
 
   function reorderInAutoLayout(nodeId: string, parentId: string, insertIndex: number) {
+    // One undo step for the move, any slot it claims, and the group it leaves.
+    ctx.undo.runBatch('Reorder', () => reorderInFlow(nodeId, parentId, insertIndex))
+  }
+
+  function reorderInFlow(nodeId: string, parentId: string, insertIndex: number) {
     const parent = ctx.graph.getNode(parentId)
     if (!parent || parent.layoutMode === 'NONE') return
 
@@ -49,6 +55,7 @@ export function createStructureReorderActions(ctx: EditorContext) {
         ctx.runLayoutForParents([origParentId, parentId])
       }
     })
+    fitEnclosingGroupsWithUndo(ctx, [origParentId])
   }
 
   /**
@@ -57,6 +64,11 @@ export function createStructureReorderActions(ctx: EditorContext) {
    * is refused when it would put a component inside itself.
    */
   function reorderChildWithUndo(nodeId: string, newParentId: string, insertIndex: number) {
+    // One undo step for the move, any slot it claims, and the groups it changes.
+    ctx.undo.runBatch('Reorder', () => reorderChild(nodeId, newParentId, insertIndex))
+  }
+
+  function reorderChild(nodeId: string, newParentId: string, insertIndex: number) {
     assertNodeEditable(ctx.graph, nodeId)
     assertNodeEditable(ctx.graph, newParentId)
     const node = ctx.graph.getNode(nodeId)
@@ -87,6 +99,9 @@ export function createStructureReorderActions(ctx: EditorContext) {
         ctx.runLayoutForParents([origParentId, newParentId])
       }
     })
+    // Groups the layer left or joined fit their layers; a stacking change can move a group's box
+    // too, when a mask changes what it clips.
+    fitEnclosingGroupsWithUndo(ctx, [origParentId, newParentId])
   }
 
   /**
@@ -106,18 +121,23 @@ export function createStructureReorderActions(ctx: EditorContext) {
     ctx.requestRender()
   }
 
-  /** Puts a frame's children in `order` as one undo step, laying the frame out once. */
+  /**
+   * Puts a frame's children in `order` as one undo step with any slot it claims, laying the frame
+   * out once.
+   */
   function setChildOrder(parentId: string, order: readonly string[], label = 'Reorder') {
     const before = ctx.graph.getNode(parentId)?.childIds
     if (!before || order.every((id, index) => id === before[index])) return
-    if (!prepareSlotEdits(ctx, [parentId])) return
-    const previous = [...before]
-    const next = [...order]
-    applyChildOrder(parentId, next)
-    ctx.undo.push({
-      label,
-      forward: () => applyChildOrder(parentId, next),
-      inverse: () => applyChildOrder(parentId, previous)
+    ctx.undo.runBatch(label, () => {
+      if (!prepareSlotEdits(ctx, [parentId])) return
+      const previous = [...before]
+      const next = [...order]
+      applyChildOrder(parentId, next)
+      ctx.undo.push({
+        label,
+        forward: () => applyChildOrder(parentId, next),
+        inverse: () => applyChildOrder(parentId, previous)
+      })
     })
   }
 

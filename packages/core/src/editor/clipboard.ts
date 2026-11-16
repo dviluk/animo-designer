@@ -33,6 +33,7 @@ import { createClipboardPlacementActions, type ClipboardPlacement } from './clip
 import { createClipboardWebActions } from './clipboard/web'
 import { acceptsChildren, prepareSlotEdits } from './components/slots'
 import { collectSubtrees, restoreSubtree, snapshotSubtree } from './history/subtree'
+import { fitEnclosingGroupsWithUndo } from './structure/group/bounds'
 import type { EditorContext } from './types'
 
 type PasteOptions = {
@@ -58,6 +59,11 @@ export function duplicateNode(
 
 export function createClipboardActions(ctx: EditorContext) {
   function duplicateSelected(selectedNodes: SceneNode[]) {
+    // One undo step for the copies and any slot they claim.
+    ctx.undo.runBatch('Duplicate', () => duplicateLayers(selectedNodes))
+  }
+
+  function duplicateLayers(selectedNodes: SceneNode[]) {
     const prevSelection = new Set(ctx.state.selectedIds)
     const selectedSet = new Set(selectedNodes.map((n) => n.id))
     const stackIndex = (node: SceneNode) =>
@@ -425,6 +431,12 @@ export function createClipboardActions(ctx: EditorContext) {
         ctx.setSelectedIds(prevSelection)
       }
     })
+    // Groups shrink to the layers left in them, and one left empty goes, in the same undo step,
+    // which `deleteNodes` batches.
+    fitEnclosingGroupsWithUndo(
+      ctx,
+      entries.map((entry) => entry.parentId)
+    )
     ctx.setSelectedIds(new Set(selectionAfter))
   }
 
