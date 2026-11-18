@@ -147,14 +147,18 @@ describe('Design JSX scalar variables', () => {
     expect(ceilingNode.boundVariables).toEqual({ maxWidth: 'space', maxHeight: 'space' })
 
     const exported = [sceneNodeToJSX(floor.id, graph), sceneNodeToJSX(ceiling.id, graph)]
-    // The collection is declared in the snippet, so each bound size is written as its handle.
+    // Export declares the collection with defineVars by default, so each bound size is written as its handle.
     expect(exported[0]).toContain('minW={spacing["Space/medium"]} minH={spacing["Space/medium"]}')
     expect(exported[1]).toContain('maxW={spacing["Space/medium"]} maxH={spacing["Space/medium"]}')
+    for (const jsx of exported) expect(jsx).not.toContain('bind=')
     const [floorCopy] = await renderJSX(graph, exported[0])
-    expect(getNodeOrThrow(graph, floorCopy.id).boundVariables).toEqual({
-      minWidth: 'space',
-      minHeight: 'space'
-    })
+    const [ceilingCopy] = await renderJSX(graph, exported[1])
+    const floorCopyNode = getNodeOrThrow(graph, floorCopy.id)
+    const ceilingCopyNode = getNodeOrThrow(graph, ceilingCopy.id)
+    expect([floorCopyNode.width, floorCopyNode.height]).toEqual([16, 16])
+    expect([ceilingCopyNode.width, ceilingCopyNode.height]).toEqual([16, 16])
+    expect(floorCopyNode.boundVariables).toEqual({ minWidth: 'space', minHeight: 'space' })
+    expect(ceilingCopyNode.boundVariables).toEqual({ maxWidth: 'space', maxHeight: 'space' })
   })
 
   it('binds through JSX strings in the agent authoring path', async () => {

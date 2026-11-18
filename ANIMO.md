@@ -1,7 +1,8 @@
 # animo-designer: what this fork changes, and how its server image is built
 
 `dviluk/animo-designer` mirrors `open-pencil/open-pencil` for one self-hosted Cloud server on one of our own machines.
-It carries four small changes of its own, each behind a build setting whose absence keeps upstream's behaviour.
+It carries five small changes of its own: four behind a build setting whose absence keeps upstream's behaviour, and
+one fix, the fifth, which has none.
 Everything else of ours lives outside this repository: the server's compose and settings files, its data folders and its
 secrets.
 
@@ -76,8 +77,11 @@ secrets.
   24 px high.
 - **The setting:** none; this is a fix. If upstream fixes it, take theirs and drop this change.
 - **The files:** `packages/design-jsx/src/variables/props.ts` (the four props), `packages/design-jsx/src/tree.ts`
-  (their types), `packages/design-jsx/src/reference/authoring.md` (the props a FLOAT reference works in) and
-  `packages/core/tests/design-jsx/scalar-variables.test.ts`.
+  (their types), `packages/design-jsx/src/reference/authoring.md` (the props a FLOAT reference works in) and its two
+  generated copies, `packages/docs/reference/design-authoring.md` and
+  `skills/open-pencil/references/design-authoring.md`, and `packages/core/tests/design-jsx/scalar-variables.test.ts`.
+  On a merge conflict in the reference, resolve the source and run `bun run generate:authoring-reference`; never
+  hand-merge the copies.
 
 ## What still reaches outside
 
@@ -115,5 +119,6 @@ Never set `VITE_OPENPENCIL_FEEDBACK`: without it the editor sends no usage event
 ## Keeping up with upstream
 
 - Merge `upstream/master` in; never rebase.
-- Keep each change small and behind its setting, so a merge stays easy.
+- Keep each change small and behind its setting, or, for a fix, say in its section when to drop it, so a merge stays
+  easy.
 - If upstream gains a setting of its own for the same thing, drop that change and use theirs.
