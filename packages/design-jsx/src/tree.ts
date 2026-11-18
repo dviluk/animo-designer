@@ -118,10 +118,10 @@ export type StyleProps = {
 
   w?: number | 'fill' | 'hug' | DesignVariable
   h?: number | 'fill' | 'hug' | DesignVariable
-  minW?: number
-  maxW?: number
-  minH?: number
-  maxH?: number
+  minW?: number | DesignVariable
+  maxW?: number | DesignVariable
+  minH?: number | DesignVariable
+  maxH?: number | DesignVariable
 
   x?: number
   y?: number

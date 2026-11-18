@@ -22,6 +22,10 @@ export function scalarProps({ text, grid, wrap }: BindingContext): BoundProp[] {
   const props: BoundProp[] = [
     { prop: 'w', fields: ['width'] },
     { prop: 'h', fields: ['height'] },
+    { prop: 'minW', fields: ['minWidth'] },
+    { prop: 'maxW', fields: ['maxWidth'] },
+    { prop: 'minH', fields: ['minHeight'] },
+    { prop: 'maxH', fields: ['maxHeight'] },
     { prop: 'p', fields: PADDING_FIELDS },
     { prop: 'px', fields: ['paddingLeft', 'paddingRight'] },
     { prop: 'py', fields: ['paddingTop', 'paddingBottom'] },

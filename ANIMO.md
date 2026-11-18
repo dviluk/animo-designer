@@ -66,6 +66,19 @@ secrets.
   `AGENT_EDITOR`); `src/app/automation/mcp/runtime.ts` (`localMCPAvailable`) and `spawn.ts`
   (`readAgentEditorHandle`).
 
+## The fifth change: a minimum or maximum size bound to a variable is kept
+
+- **What upstream does:** design JSX resolves a FLOAT variable only in the props `scalarProps()` lists
+  (`packages/design-jsx/src/variables/props.ts`), and `minW`, `maxW`, `minH` and `maxH` aren't there. So
+  `minH={designVar(…)}` reaches `sizeLimit()` (`packages/design-jsx/src/overrides/state.ts`) as the variable itself,
+  which keeps numbers only, and the size limit is dropped with no warning. The scene graph binds all four fields.
+- **Why we change it:** the Fieldbook's parts give every touch target its 48 px floor as a variable, so a button drew
+  24 px high.
+- **The setting:** none; this is a fix. If upstream fixes it, take theirs and drop this change.
+- **The files:** `packages/design-jsx/src/variables/props.ts` (the four props), `packages/design-jsx/src/tree.ts`
+  (their types), `packages/design-jsx/src/reference/authoring.md` (the props a FLOAT reference works in) and
+  `packages/core/tests/design-jsx/scalar-variables.test.ts`.
+
 ## What still reaches outside
 
 With the first three settings set, the served editor still makes these requests:

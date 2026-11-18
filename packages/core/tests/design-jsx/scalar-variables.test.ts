@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'bun:test'
 
 import { renderJSX, renderTree } from '@open-pencil/core/design-jsx'
-import { Frame, Text, Rectangle, designMode, designVar } from '@open-pencil/design-jsx'
+import {
+  Frame,
+  Text,
+  Rectangle,
+  designMode,
+  designVar,
+  sceneNodeToJSX
+} from '@open-pencil/design-jsx'
 import { getNodeOrThrow } from '@open-pencil/test-support/assert'
 import { addTestColorVariable, makeSceneGraph } from '@open-pencil/test-support/scene'
 function setup() {
@@ -99,6 +106,55 @@ describe('Design JSX scalar variables', () => {
       letterSpacing: 'space'
     })
     expect(node.fontSize).toBe(16)
+  })
+
+  it('binds minimum and maximum sizes, lays Hug frames out within them, and exports them back', async () => {
+    const { graph, token } = setup()
+    const floor = await renderTree(
+      graph,
+      Frame({
+        flex: 'row',
+        w: 'hug',
+        h: 'hug',
+        minW: token,
+        minH: token,
+        children: Rectangle({ w: 4, h: 4 })
+      })
+    )
+    const ceiling = await renderTree(
+      graph,
+      Frame({
+        flex: 'row',
+        w: 'hug',
+        h: 'hug',
+        maxW: token,
+        maxH: token,
+        children: Rectangle({ w: 40, h: 40 })
+      })
+    )
+    const floorNode = getNodeOrThrow(graph, floor.id)
+    const ceilingNode = getNodeOrThrow(graph, ceiling.id)
+    expect([floorNode.width, floorNode.height, floorNode.minWidth, floorNode.minHeight]).toEqual([
+      16, 16, 16, 16
+    ])
+    expect([
+      ceilingNode.width,
+      ceilingNode.height,
+      ceilingNode.maxWidth,
+      ceilingNode.maxHeight
+    ]).toEqual([16, 16, 16, 16])
+    expect(floorNode.boundVariables).toEqual({ minWidth: 'space', minHeight: 'space' })
+    expect(ceilingNode.boundVariables).toEqual({ maxWidth: 'space', maxHeight: 'space' })
+
+    const exported = [sceneNodeToJSX(floor.id, graph), sceneNodeToJSX(ceiling.id, graph)]
+    // The collection is declared in the snippet, so each bound size is written as its handle.
+    expect(exported[0]).toContain('minW={spacing["Space/medium"]} minH={spacing["Space/medium"]}')
+    expect(exported[1]).toContain('maxW={spacing["Space/medium"]} maxH={spacing["Space/medium"]}')
+    const [floorCopy] = await renderJSX(graph, exported[0])
+    expect(getNodeOrThrow(graph, floorCopy.id).boundVariables).toEqual({
+      minWidth: 'space',
+      minHeight: 'space'
+    })
   })
 
   it('binds through JSX strings in the agent authoring path', async () => {
