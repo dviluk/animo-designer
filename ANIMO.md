@@ -41,8 +41,11 @@ secrets.
   its faces from `cdn.jsdelivr.net`.
 - **The setting:** `VITE_OPENPENCIL_ONLINE_FONTS=off`, read at build time.
   - Without it, online fonts are on by default, as upstream's.
-  - With it off, `DEFAULT_ONLINE_FONTS` is false: no font provider is enabled, so the editor lists and fetches no font
-    from outside. Settings can still turn online fonts on, and its reset goes back to off.
+  - With it off, `DEFAULT_ONLINE_FONTS` is false: no font provider is enabled, so the editor lists no font from
+    outside and fetches none for a document's text. Settings can still turn online fonts on, and its reset goes back
+    to off.
+  - One exception, since upstream's `v0.17.0-beta.6`: HTML brought in loads the fonts its own `@font-face` rules name,
+    from wherever they name them, whatever this setting says (What still reaches outside).
 - **The files:** `vite.config.ts` (the define `__OPENPENCIL_ONLINE_FONTS__`), `src/env.d.ts`, and
   `src/app/editor/fonts/index.ts` (`DEFAULT_ONLINE_FONTS`).
 
@@ -54,13 +57,18 @@ secrets.
 - **The settings:** `VITE_OPENPENCIL_LOCAL_ICONS=lucide` for the editor, read at build time, and
   `OPENPENCIL_LOCAL_ICONS=lucide` for the command-line tool, read when it runs.
   - Without them, icons are upstream's.
-  - With them, every icon is searched, browsed and drawn from the Lucide set bundled as `@iconify-json/lucide`, and no
-    icon is fetched. Any other set is refused by name.
+  - With them, every icon the editor and the command-line tool search, browse and draw comes from the Lucide set
+    bundled as `@iconify-json/lucide`, and none is fetched. Any other set is refused by name.
+  - One exception: the command-line tool's `import` (below) still names icons with upstream's matcher.
 - **Naming imported icons, since upstream's `v0.17.0-beta.6`:** upstream names the SVG icons in HTML brought in by
   import, paste or Place by how they draw (the Settings switch `import.nameIcons`, on by default), with whaticon's
   index downloaded from `https://cdn.jsdelivr.net/npm/whaticon@0.4.0/data`. With local icons, `importIconMatcher()`
   gives no matcher, so nothing is downloaded and every SVG comes in as drawn, unnamed. The Settings switch then changes
   nothing: only the bundled Lucide set could match.
+  - This covers the editor only. The command-line tool's `import` builds upstream's matcher whenever `--icon-names` is
+    on, its default (`packages/cli/src/commands/import.ts`), whatever `OPENPENCIL_LOCAL_ICONS` says: it downloads the
+    same index and draws upstream's icons. `--no-icon-names` turns it off. Our `openpencil.sh` runs the tool with no
+    network, so there the import warns and brings every SVG in unnamed.
 - **The files:**
   - `packages/core/src/icons/local.ts`: a client with the Iconify client's calls, answered from sets in memory, under
     upstream's `createIconifyProvider`; `loadLucideIconSet()` loads the set on first use;
@@ -107,11 +115,17 @@ With the first three settings set, the served editor still makes these requests:
 - **When a message is opened in a browser:** the server's e-mails show their logo from `openpencil.dev`
   (`packages/cloud/src/email/templates/brand.ts`). We accept it: our mails are read through the mail catcher's API, which
   loads no image.
-- **Only when a person chooses them:** online fonts turned on in Settings, AI, stock photos, web search, live rooms for
-  files on the device, and the official server in the connect dialog.
+- **Only when a person chooses them:**
+  - online fonts turned on in Settings, AI, stock photos, web search, and live rooms for files on the device;
+  - the official server, in the connect dialog or from a link that names it;
+  - since upstream's `v0.17.0-beta.6`, HTML brought in by import, Open from URL, Place or paste: the browser loads the
+    page's linked stylesheets, its pictures and its `@font-face` fonts from wherever the page names them
+    (`src/app/document/io/dom.ts`, `src/app/editor/clipboard/paste/web.ts`). A copied layout with no text pastes
+    straight to layers, with no "Paste as layers" choice first.
 - **On every page load:** the editor probes `http://127.0.0.1:7600/health` for a desktop agent server. It stays on the
   machine that runs the browser.
-- **In the command-line tool:** a `.pen` file's own icons are still read through upstream's icons.
+- **In the command-line tool:** a `.pen` file's own icons are still read through upstream's icons, and `import` names
+  icons online unless `--no-icon-names` is given (the third change).
 
 These reach outside only when switched on, and none is on for us:
 
@@ -120,6 +134,20 @@ These reach outside only when switched on, and none is on for us:
   (`[error_tracking]`).
 - **In the build:** the usage ping, and the campaigns its answer brings, only with `VITE_OPENPENCIL_FEEDBACK=on`
   (below).
+
+## Comments live on the server
+
+Since upstream's `v0.17.0-beta.6`, a Cloud document's comments live in the server's database, not in its stored
+file.
+
+- **A save to the server leaves them out of the file** (`src/app/document/io/source/actions.ts`), and the editor shows
+  the server's threads in place of any the file holds (`src/app/cloud/comments/sync.ts`).
+- **A file's own comments come in only once,** when a document this device made is first uploaded. A document already
+  on the server keeps its old comments only in its earlier versions.
+- **What follows from it:**
+  - A file downloaded through the server's API carries none of the server's comments. The editor's Save As and the
+    portal's download write them back into theirs (`src/app/cloud/comments/file.ts`).
+  - A backup must hold the database, since the stored files no longer hold the comments.
 
 ## Building the server image
 
@@ -144,7 +172,7 @@ campaigns.
 
 ## Keeping up with upstream
 
-- Merge `upstream/master` in; never rebase.
+- Merge upstream's newest release tag in, never `upstream/master` between releases, and never rebase.
 - Keep each change small and behind its setting, or, for a fix, say in its section when to drop it, so a merge stays
   easy.
 - If upstream gains a setting of its own for the same thing, drop that change and use theirs.
