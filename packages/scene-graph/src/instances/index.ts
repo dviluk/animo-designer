@@ -14,8 +14,8 @@ import { canCreateInstance } from './cycles'
 import { INSTANCE_OVERRIDE_FIELDS, INSTANCE_SYNC_PROPS } from './fields'
 import { findInstanceAncestor, instanceMainComponent } from './main-component'
 import {
-  clearInstanceOverrides,
   cloneInstanceOverrideState,
+  createInstanceOverrideState,
   getInstanceOverride,
   hasInstanceOverride as hasNodeInstanceOverride,
   setInstanceOverride
@@ -256,12 +256,13 @@ export function detachInstance(graph: SceneGraph, instanceId: string): void {
   if (node?.type !== 'INSTANCE') return
   for (const nested of outermostNestedInstances(graph, node))
     adoptNestedOverrides(graph, node, nested)
-  if (node.componentId) {
-    graph.instanceIndex.get(node.componentId)?.delete(instanceId)
-  }
-  node.type = 'FRAME'
-  node.componentId = null
-  clearInstanceOverrides(node.instanceOverrides)
+  // Through the graph, as its undo goes back: observers see the edit, the room gets it, and the
+  // instance index drops the instance.
+  graph.updateNode(instanceId, {
+    type: 'FRAME',
+    componentId: null,
+    instanceOverrides: createInstanceOverrideState()
+  })
 }
 
 // A swap's bookkeeping belongs to the instance enclosing the swapped one, never to the swapped one.

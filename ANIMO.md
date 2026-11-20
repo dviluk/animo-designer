@@ -1,8 +1,8 @@
 # animo-designer: what this fork changes, and how its server image is built
 
 `dviluk/animo-designer` mirrors `open-pencil/open-pencil` for one self-hosted Cloud server on one of our own machines.
-It carries five small changes of its own: four behind a build setting whose absence keeps upstream's behaviour, and
-one fix, the fifth, which has none.
+It carries six small changes of its own: four behind a build setting whose absence keeps upstream's behaviour, and
+two fixes, the fifth and the sixth, which have none.
 Everything else of ours lives outside this repository: the server's compose and settings files, its data folders and its
 secrets.
 
@@ -107,6 +107,36 @@ secrets.
   `skills/open-pencil/references/design-authoring.md`, and `packages/core/tests/design-jsx/scalar-variables.test.ts`.
   On a merge conflict in the reference, resolve the source and run `bun run generate:authoring-reference`; never
   hand-merge the copies.
+
+## The sixth change: a detach inside a component no longer breaks later pages and saves
+
+- **What upstream does:** Detach turns the layer into a frame in place without telling the graph
+  (`detachInstance`, `packages/scene-graph/src/instances/index.ts`). So nothing sees an edit: a reader worker goes on
+  loading from the opened file, and the room hears of the detach only with the layer's next change.
+  - A later page load builds each new instance of that component from the file's copy, where the layer is still an
+    instance. It then refuses the link to the live frame (`Invalid source child`,
+    `packages/fig/src/instance-overrides/materialize-instance.ts`).
+  - A save loads the pages not yet shown the same way, so it fails too.
+  - Every later page holding an instance of that component, and every save, fails until the design is reopened, in one
+    window as in two.
+- **Why we change it:** a detach inside a component is an ordinary edit, and after one a window could neither show
+  those pages nor save.
+- **What it does:**
+  - Detach writes through `graph.updateNode`, as its undo already did. Observers see the edit, the room gets it at
+    once, and the instance index drops the instance.
+  - A page load into an edited drawing leaves out of a new instance the copy of a layer its component held as an
+    instance in the file and holds as a frame now, as it leaves out the copy of a deleted layer. The instance's sync
+    after its build then copies the component's frame in.
+- **The limit:** an instance on a page not yet shown keeps nothing it changed on that layer's copy, such as the dot's
+  colour in that one instance.
+  - When: on that page's first load after the detach, or on a save.
+  - The copy becomes the component's frame.
+  - Keeping the instance's own change waits for a later change to how a page load builds instances.
+- **The setting:** none; this is a fix. If upstream fixes it, take theirs and drop this change.
+- **The files:**
+  - `packages/scene-graph/src/instances/index.ts` (`detachInstance`);
+  - `packages/fig/src/instance-overrides/source-children.ts` (`reconcileOccurrenceStructure`, `isDetachedSince`);
+  - `tests/integration/collab/cloud/component-detach.test.ts`.
 
 ## What still reaches outside
 

@@ -32,7 +32,8 @@ export function reconcileOccurrenceStructure(
     const liveIndex = (child: InstanceOccurrence): number | undefined => {
       const counterpart = sourceChildren.get(child.sourceId)
       const node = counterpart && nodes.get(counterpart)
-      return node && liveOrder.get(node.id)
+      if (!counterpart || !node || isDetachedSince(graph, counterpart, node)) return undefined
+      return liveOrder.get(node.id)
     }
     current.children = current.children
       .filter((child) => liveIndex(child) !== undefined)
@@ -46,6 +47,15 @@ export function reconcileOccurrenceStructure(
     }
   }
   reconcileLayers(target, component.occurrence)
+}
+
+/**
+ * Whether a component's layer that was an instance in the file is none now: a detach made it a
+ * frame. A new instance leaves its copy out, as it does a deleted layer's, and the instance's sync
+ * after its build copies the frame in. What the file's instance changed on that copy is not kept.
+ */
+function isDetachedSince(graph: SceneGraph, source: InstanceOccurrence, layer: SceneNode): boolean {
+  return source.mainComponentId !== null && graph.getNode(layer.id)?.type !== 'INSTANCE'
 }
 
 /**
