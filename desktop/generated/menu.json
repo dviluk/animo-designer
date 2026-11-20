@@ -735,7 +735,8 @@
       },
       {
         "id": "open-tour",
-        "label": "Open the Tour"
+        "label": "Open the Tour",
+        "feature": "tour"
       },
       {
         "id": "check-updates",

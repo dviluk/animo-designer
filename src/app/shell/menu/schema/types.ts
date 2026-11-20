@@ -41,7 +41,8 @@ export type AppMenuHandler = 'editor' | 'shell'
  * (`./features`). `document`: the tab in front holds a document, not Home or a New file tab;
  * `local-file`: that document is backed by a file on disk; `cloud-document`: it is kept by a
  * Cloud server; `donation`: the build names a donation page, from the repository's `.github/FUNDING.yml`;
- * `self-update`: the desktop app installs its own updates, not a package manager or store.
+ * `self-update`: the desktop app installs its own updates, not a package manager or store;
+ * `tour`: the build may ask the official Cloud server for the tour.
  */
 export type AppMenuFeature =
   | 'document'
@@ -49,6 +50,7 @@ export type AppMenuFeature =
   | 'cloud-document'
   | 'donation'
   | 'self-update'
+  | 'tour'
 
 export interface AppMenuActionItem {
   type?: 'item'

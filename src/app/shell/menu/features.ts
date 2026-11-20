@@ -7,6 +7,7 @@ import { useEditorStore } from '@/app/editor/active-store'
 import { showsDocument } from '@/app/tabs'
 import { canSelfUpdate } from '@/app/tauri/capabilities'
 import { isTauri } from '@/app/tauri/env'
+import { OFFICIAL_CLOUD_CHECK } from '@/constants'
 
 import type { AppMenuFeature } from './schema'
 
@@ -21,7 +22,9 @@ const available: Record<AppMenuFeature, () => boolean> = {
   'cloud-document': () => isCloudBinding(store.getStorageBinding()),
   donation: () => DONATION_URL !== null,
   // The browser and packages a store or package manager updates have no updater to open.
-  'self-update': () => canSelfUpdate()
+  'self-update': () => canSelfUpdate(),
+  // The tour comes from the official server's gallery, which a build with its check off never asks.
+  tour: () => OFFICIAL_CLOUD_CHECK
 }
 
 /** Whether a menu item that waits for a feature shows; items without one always do. */

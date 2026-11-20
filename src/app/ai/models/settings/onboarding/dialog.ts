@@ -2,6 +2,7 @@ import { ref } from 'vue'
 
 import { aiModelSettings } from '@/app/ai/models/store'
 import { appPreferences, updateAISetupState } from '@/app/settings/preferences/store'
+import { OFFICIAL_CLOUD_CHECK } from '@/constants'
 
 import { isUnconfiguredModelSettings } from './apply'
 
@@ -15,7 +16,8 @@ export const aiSetupOffersTour = ref(true)
 
 export function openAISetup(entry: AISetupEntry = 'guided', offersTour = true): void {
   aiSetupEntry.value = entry
-  aiSetupOffersTour.value = offersTour
+  // A build with the official check off offers no tour: it comes from the official server.
+  aiSetupOffersTour.value = offersTour && OFFICIAL_CLOUD_CHECK
   aiSetupDialogOpen.value = true
 }
 

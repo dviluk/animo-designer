@@ -29,7 +29,7 @@ export const HELP_MENU: AppMenuGroupSchema = {
       handler: 'shell',
       palette: { keywords: ['release notes', 'changelog', 'version', 'updates'] }
     },
-    { id: 'open-tour', label: 'Open the Tour', handler: 'shell' },
+    { id: 'open-tour', label: 'Open the Tour', handler: 'shell', feature: 'tour' },
     {
       ...CHECK_UPDATES_MENU_ITEM,
       feature: 'self-update',
