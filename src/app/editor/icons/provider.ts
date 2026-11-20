@@ -83,11 +83,16 @@ export function appIconMatcher(renderer: SkiaRenderer, signal?: AbortSignal): Ic
 
 /**
  * The matcher HTML brought into `editor` names its icons with, by import, paste, or Place; none
- * when the setting is off or the editor has no renderer yet.
+ * when the setting is off, the editor has no renderer yet, or the build has local icons: naming
+ * downloads whaticon's index from a CDN, and only the bundled Lucide set could match.
  */
-export function importIconMatcher(editor: Editor, signal?: AbortSignal): IconMatcher | undefined {
+export function importIconMatcher(
+  editor: Editor,
+  signal?: AbortSignal,
+  localIcons = LOCAL_ICONS
+): IconMatcher | undefined {
   const { renderer } = editor
-  return renderer && appPreferences.value.import.nameIcons
+  return renderer && !localIcons && appPreferences.value.import.nameIcons
     ? appIconMatcher(renderer, signal)
     : undefined
 }
