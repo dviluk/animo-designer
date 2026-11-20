@@ -9,6 +9,8 @@ import {
 } from '@agentclientprotocol/sdk/unstable'
 
 import type { ACPAgentDef } from '@open-pencil/core/constants'
+import { createDeferred } from '@open-pencil/std/async'
+import { isDeadline, withDeadline } from '@open-pencil/std/timing'
 
 import {
   AUTH_STATUS_UPDATE_METHOD,
@@ -18,7 +20,6 @@ import {
 import { spawnACPProcess, type ACPProcess } from '@/app/ai/agents/acp/process'
 import type { AgentChild } from '@/app/ai/agents/process'
 import { resolveSpawnTarget } from '@/app/ai/agents/setup/discovery'
-import { createDeferred } from '@/app/runtime/deferred'
 
 /**
  * How long an agent may take to answer one request while it starts; resuming starts the agent's
@@ -28,8 +29,8 @@ export const AGENT_START_TIMEOUT_MS = 60_000
 
 /**
  * The request's answer, unless one of `also` fails first or it takes longer than `timeoutMs`,
- * which rejects with `timedOut`. The timer is cleared once the race settles, so an answer that
- * comes in time leaves nothing pending.
+ * which rejects with `timedOut`. ACP requests take no signal, so a request past its deadline goes
+ * on in the agent; only the wait for it ends.
  */
 export async function withinDeadline<T>(
   request: Promise<T>,
@@ -37,12 +38,11 @@ export async function withinDeadline<T>(
   timedOut: string,
   ...also: Promise<never>[]
 ): Promise<T> {
-  const deadline = createDeferred<never>()
-  const timer = setTimeout(() => deadline.reject(new Error(timedOut)), timeoutMs)
   try {
-    return await Promise.race([request, ...also, deadline.promise])
-  } finally {
-    clearTimeout(timer)
+    return await withDeadline(timeoutMs, () => Promise.race([request, ...also]))
+  } catch (error) {
+    if (isDeadline(error)) throw new Error(timedOut, { cause: error })
+    throw error
   }
 }
 
@@ -100,6 +100,12 @@ export interface AgentConnection {
   untilStopped<T>(request: Promise<T>): Promise<T>
   /** As `untilStopped`, and the request must also answer within the deadline. */
   bounded<T>(request: Promise<T>, timeoutMs?: number): Promise<T>
+  /**
+   * A request of a later turn within the deadline: it ends when the agent exits or that turn's
+   * `signal` stops it. The start's `signal` stops only the start, so a turn stopped earlier does
+   * not reject the requests of the turns after it.
+   */
+  forTurn<T>(request: Promise<T>, signal?: AbortSignal, timeoutMs?: number): Promise<T>
   /** Stops the agent. */
   close(): Promise<void>
 }
@@ -186,6 +192,19 @@ export async function connectAgent(
     untilStopped: (request) => Promise.race([request, exited, stoppedByUser]),
     bounded: (request, within = timeoutMs) =>
       withinDeadline(request, within, timedOut, exited, stoppedByUser),
+    async forTurn(request, turnSignal, within = timeoutMs) {
+      const stopped = createDeferred<never>()
+      stopped.promise.catch(() => undefined)
+      // The start's stop message names the start; a later turn's stop is just a stop.
+      const onTurnAbort = () => stopped.reject(new Error('The request was stopped.'))
+      if (turnSignal?.aborted) onTurnAbort()
+      else turnSignal?.addEventListener('abort', onTurnAbort, { once: true })
+      try {
+        return await withinDeadline(request, within, timedOut, exited, stopped.promise)
+      } finally {
+        turnSignal?.removeEventListener('abort', onTurnAbort)
+      }
+    },
     async close() {
       closing = true
       await child.kill().catch(() => undefined)

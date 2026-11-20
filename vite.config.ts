@@ -10,7 +10,6 @@ import { defineConfig, loadEnv } from 'vite'
 
 import { ensureBrandAssets } from '@open-pencil/brand-tools'
 import { openPencil } from '@open-pencil/core/node/vite'
-import { ensureDemoDocument } from '@open-pencil/demo-tools'
 
 import packageJson from './package.json'
 import { viteBuildTarget } from './src/app/shell/support/baseline'
@@ -57,7 +56,7 @@ export default defineConfig(async ({ command, mode }) => {
   // Agents automate the editor's own development server; a Cloud site, built or served, has none
   // unless it is the agents' editor.
   const automation = (!metrics && !cloudSite) || agentEditor
-  await Promise.all([ensureBrandAssets(['web']), metrics ? undefined : ensureDemoDocument()])
+  await ensureBrandAssets(['web'])
   const outDir = metrics ? 'dist-metrics/admin' : cloudSite ? 'dist-cloud' : 'dist'
   return {
     resolve: {
@@ -82,8 +81,9 @@ export default defineConfig(async ({ command, mode }) => {
         automationRoute.browserURL.replace(/^ws/, 'http')
       )
     },
-    // Dynamic browser fixtures must not trigger a dependency-optimizer reload mid-test.
-    optimizeDeps: { include: ['ai/test'] },
+    // Dependencies found only after the page loads, such as dynamic browser fixtures and semver
+    // behind the campaigns, would make the optimizer reload the page mid-test or mid-story.
+    optimizeDeps: { include: ['ai/test', 'semver'] },
     plugins: [
       rawMarkdownPlugin(),
       inlineScriptPlugin(),

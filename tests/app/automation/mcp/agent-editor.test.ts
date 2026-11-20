@@ -23,8 +23,10 @@ function stubServers(tokenResponse: () => Response) {
       if (url === AGENT_EDITOR_TOKEN_PATH) return tokenResponse()
       if (url === `${AUTOMATION_HTTP_URL}/health`) {
         const authorized = new Headers(init?.headers).get('Authorization') === `Bearer ${TOKEN}`
+        // A server of this version says it takes client tokens; the app refuses one that doesn't.
+        const health = { status: 'ok', version: APP_VERSION, clientTokens: true }
         return authorized
-          ? new Response(JSON.stringify({ status: 'ok', version: APP_VERSION }), { status: 200 })
+          ? new Response(JSON.stringify(health), { status: 200 })
           : new Response('', { status: 401 })
       }
       throw new Error(`unexpected request: ${url}`)
