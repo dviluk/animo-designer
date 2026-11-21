@@ -145,8 +145,7 @@ function tree(graph: SceneGraph, node: SceneNode): Layer {
 function layerOn(graph: SceneGraph, page: string, name: string): Layer {
   const node = graph
     .getChildren(pageNamed(graph, page))
-    .filter((candidate) => candidate.name === name)
-    .at(-1)
+    .findLast((candidate) => candidate.name === name)
   if (!node) throw new Error(`Expected ${name} on ${page}`)
   return tree(graph, node)
 }
@@ -193,8 +192,7 @@ const shownBarWith = (dotLayer: Layer) =>
 function detachDot(tab: EditorStore, rename?: string): void {
   const progress = tab.graph
     .getChildren(pageNamed(tab.graph, 'Parts'))
-    .filter((node) => node.name === 'Progress')
-    .at(-1)
+    .findLast((node) => node.name === 'Progress')
   const dot = progress && tab.graph.getChildren(progress.id).find((node) => node.name === 'Dot')
   if (!dot) throw new Error('Expected the dot in the bar’s component')
   tab.select([dot.id])
@@ -302,7 +300,9 @@ describe('a detach inside a component the tab built, then a page with an instanc
       expect(layerOn(bobs, 'More', 'Bar')).toEqual(barWith(dotFrame('Badge')))
       expect(layerOn(bob.graph, 'More', 'Bar')).toEqual(barWith(dotFrame('Badge')))
       expect(layerOn(anns, 'More', 'Bar').children.map((child) => child.name)).toContain('Fill')
-      expect(layerOn(ann.graph, 'More', 'Bar').children.map((child) => child.name)).toContain('Fill')
+      expect(layerOn(ann.graph, 'More', 'Bar').children.map((child) => child.name)).toContain(
+        'Fill'
+      )
     })
   }
 })
@@ -347,7 +347,8 @@ describe('a group inside a component turned into a frame, then a page with an in
       const component = tab.graph
         .getChildren(pageNamed(tab.graph, 'Parts'))
         .find((node) => node.name === 'Card')
-      const cap = component && tab.graph.getChildren(component.id).find((node) => node.name === 'Cap')
+      const cap =
+        component && tab.graph.getChildren(component.id).find((node) => node.name === 'Cap')
       if (!cap) throw new Error('Expected the group in Card')
       tab.convertLayerType(cap.id, 'FRAME')
       await settle()
