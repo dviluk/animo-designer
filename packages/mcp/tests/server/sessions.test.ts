@@ -68,16 +68,16 @@ describe('MCP session lifecycle', () => {
           throw new Error('registration failed')
         }
       })
-      for (let i = 0; i < 12; i++) {
+      for (let i = 0; i < 34; i++) {
         const result = await broken.resolveTransport(undefined).catch((error: unknown) => error)
         expect(result).toEqual(new Error('registration failed'))
       }
-      expect(close).toHaveBeenCalledTimes(12)
+      expect(close).toHaveBeenCalledTimes(34)
       const instance = manager()
       connect.mockRejectedValueOnce(new Error('connect failed'))
       const result = await instance.resolveTransport(undefined).catch((error: unknown) => error)
       expect(result).toEqual(new Error('connect failed'))
-      expect(close).toHaveBeenCalledTimes(13)
+      expect(close).toHaveBeenCalledTimes(35)
       await initialized(instance)
     } finally {
       connect.mockRestore()
@@ -105,7 +105,7 @@ describe('MCP session lifecycle', () => {
   })
   test('rejected requests do not consume session slots', async () => {
     const instance = manager()
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 34; i++) {
       const connection = await transport(instance)
       const response = await connection.handleRequest(
         new Request('http://localhost/mcp', {
@@ -124,7 +124,7 @@ describe('MCP session lifecycle', () => {
         ended.push(id)
       }
     })
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 34; i++) {
       const connection = await transport(instance)
       await connection.handleRequest(request({ ...initialize, params: { protocolVersion: 42 } }))
     }
@@ -135,10 +135,10 @@ describe('MCP session lifecycle', () => {
   test('concurrent initializations respect capacity and DELETE permits repeated reconnects', async () => {
     const instance = manager()
     const results = await Promise.all(
-      Array.from({ length: 12 }, () => instance.resolveTransport(undefined))
+      Array.from({ length: 34 }, () => instance.resolveTransport(undefined))
     )
     const connections = results.filter((result): result is MCPTransport => !('error' in result))
-    expect(connections).toHaveLength(10)
+    expect(connections).toHaveLength(32)
     expect(results.filter((result) => 'error' in result)).toHaveLength(2)
     for (const connection of connections) {
       const response = await connection.handleRequest(request(initialize))
@@ -146,7 +146,7 @@ describe('MCP session lifecycle', () => {
       if (!id) throw new Error('Missing session id')
       await instance.deleteSession(id)
     }
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 34; i++) {
       const { id } = await initialized(instance)
       await instance.deleteSession(id)
       expect(instance.getExistingTransport(id)).toEqual({ error: 'not_found' })
@@ -155,7 +155,7 @@ describe('MCP session lifecycle', () => {
 
   test('counts resources still closing until cleanup completes', async () => {
     const instance = manager()
-    const connections = await Promise.all(Array.from({ length: 10 }, () => initialized(instance)))
+    const connections = await Promise.all(Array.from({ length: 32 }, () => initialized(instance)))
     const first = connections[0]
     if (!first) throw new Error('Missing session')
     const release = deferred<undefined>()

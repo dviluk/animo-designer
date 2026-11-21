@@ -178,6 +178,17 @@ secrets.
   - `tests/integration/collab/cloud/component-detach.test.ts`;
   - `packages/fig/tests/instance-overrides/materialize.test.ts`.
 
+## The seventh change: the agent server keeps up to 32 sessions
+
+- **What upstream does:** the agent (MCP) server refuses a new session once 10 are open ("Too many active MCP
+  sessions"). A session ends when its client closes it, or after 15 minutes idle.
+- **Why we change it:** the agents' editor serves several agents at once, and a client that stops without closing its
+  session keeps its place until that idle time ends. Ten filled up in ordinary use, and the next agent was refused.
+- **What it does:** the limit is 32. The idle time stays at 15 minutes.
+- **The setting:** none; the limit is a constant.
+- **The files:** `packages/mcp/src/server/sessions.ts` (`MAX_MCP_SESSIONS`), its test
+  `packages/mcp/tests/server/security.test.ts`, and `packages/mcp/README.md`.
+
 ## What still reaches outside
 
 With the first three settings set, the served editor still makes these requests:

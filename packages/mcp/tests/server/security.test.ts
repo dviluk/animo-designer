@@ -379,7 +379,7 @@ describe('MCP auth boundary', () => {
 })
 
 // ---------------------------------------------------------------------------
-// GAP-05: MCP session limits — MAX_MCP_SESSIONS=10
+// GAP-05: MCP session limits — MAX_MCP_SESSIONS=32
 // ---------------------------------------------------------------------------
 
 describe('MCP session limits', () => {
@@ -411,10 +411,10 @@ describe('MCP session limits', () => {
     }
 
     try {
-      // Open MAX_MCP_SESSIONS (10) sessions successfully
-      for (let i = 0; i < 10; i++) await openSession()
+      // Open MAX_MCP_SESSIONS (32) sessions successfully
+      for (let i = 0; i < 32; i++) await openSession()
 
-      // The 11th must be rejected with 503. The MCP SDK wraps non-2xx
+      // The 33rd must be rejected with 503. The MCP SDK wraps non-2xx
       // responses in StreamableHTTPError, so we assert on the error text
       // rather than on a successful return.
       const overflow = new Client({ name: 'overflow', version: '0.0.0' })

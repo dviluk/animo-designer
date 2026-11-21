@@ -52,7 +52,7 @@ type MCPSessionManagerOptions = {
   sessionIdleTimeoutMs?: number
 }
 
-const MAX_MCP_SESSIONS = 10
+const MAX_MCP_SESSIONS = 32
 /** App chat ids are random hex; anything else is ignored rather than forwarded. */
 const CHAT_ID = /^[0-9a-f]{16,64}$/
 

@@ -183,7 +183,7 @@ describe('MCP Streamable HTTP transport', () => {
       }
     }
     try {
-      for (let i = 0; i < 12; i++) {
+      for (let i = 0; i < 34; i++) {
         for (const method of ['PUT', 'PATCH', 'HEAD']) {
           const response = await fetch(url, { method, headers })
           expect(response.status).toBe(405)
@@ -202,7 +202,7 @@ describe('MCP Streamable HTTP transport', () => {
         }
       }
       const responses = await Promise.all(
-        Array.from({ length: 12 }, () =>
+        Array.from({ length: 34 }, () =>
           fetch(url, {
             method: 'POST',
             headers,
@@ -210,7 +210,7 @@ describe('MCP Streamable HTTP transport', () => {
           })
         )
       )
-      expect(responses.filter((response) => response.status === 200)).toHaveLength(10)
+      expect(responses.filter((response) => response.status === 200)).toHaveLength(32)
       const rejected = responses.filter((response) => response.status === 503)
       expect(rejected).toHaveLength(2)
       expect(rejected[0]?.headers.get('retry-after')).toBe('5')
