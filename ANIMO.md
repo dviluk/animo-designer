@@ -108,34 +108,54 @@ secrets.
   On a merge conflict in the reference, resolve the source and run `bun run generate:authoring-reference`; never
   hand-merge the copies.
 
-## The sixth change: a detach inside a component no longer breaks later pages and saves
+## The sixth change: a detach, or a type change inside a component, no longer breaks later pages, and its save keeps the layer
 
-- **What upstream does:** Detach turns the layer into a frame in place without telling the graph
-  (`detachInstance`, `packages/scene-graph/src/instances/index.ts`). So nothing sees an edit: a reader worker goes on
-  loading from the opened file, and the room hears of the detach only with the layer's next change.
-  - A later page load builds each new instance of that component from the file's copy, where the layer is still an
+- **What upstream does:**
+  - **Detach turns the layer into a frame in place without telling the graph** (`detachInstance`,
+    `packages/scene-graph/src/instances/index.ts`). So nothing sees the edit: a reader worker goes on loading from the
+    opened file, and the room hears of the detach only with the layer's next change.
+  - **A later page load builds each new instance of the component from the file's copy,** where the layer is still an
     instance. It then refuses the link to the live frame (`Invalid source child`,
     `packages/fig/src/instance-overrides/materialize-instance.ts`).
-  - A save loads the pages not yet shown the same way, so it fails too.
-  - Every later page holding an instance of that component, and every save, fails until the design is reopened, in one
-    window as in two.
-- **Why we change it:** a detach inside a component is an ordinary edit, and after one a window could neither show
-  those pages nor save.
+  - **A save loads the pages not yet shown the same way,** so it fails too. Every later page holding an instance of
+    that component, and every save, fails until the design is reopened, in one window as in two.
+  - **"Convert to frame" or "to group" on a layer inside a component** breaks later pages and saves the same way: the
+    file's copy and the live layer differ in type.
+  - **A detach on a page is dropped from the save,** with any change made to that layer after it, since the save sees
+    no change. The reopened design holds the instance as it was.
+- **Why we change it:** a detach or a type change inside a component is an ordinary edit. After one, a window could
+  neither show those pages nor save, and a detach on a page was quietly lost.
 - **What it does:**
-  - Detach writes through `graph.updateNode`, as its undo already did. Observers see the edit, the room gets it at
+  - **Detach writes through `graph.updateNode`,** as its undo already did. Observers see the edit, the room gets it at
     once, and the instance index drops the instance.
-  - A page load into an edited drawing leaves out of a new instance the copy of a layer its component held as an
-    instance in the file and holds as a frame now, as it leaves out the copy of a deleted layer. The instance's sync
-    after its build then copies the component's frame in.
-- **The limit:** an instance on a page not yet shown keeps nothing it changed on that layer's copy, such as the dot's
-  colour in that one instance.
-  - When: on that page's first load after the detach, or on a save.
-  - The copy becomes the component's frame.
-  - Keeping the instance's own change waits for a later change to how a page load builds instances.
+  - **A page load into an edited drawing leaves the stale copy out of a new instance.** That is the copy of a layer
+    whose type in the component is no longer the type the file gives the copy: an instance that is now a frame, a group
+    that is now a frame, or a frame that is now a group. It is left out as the copy of a deleted layer is, and the
+    instance's sync after its build copies the layer in as it is now.
+  - **A save writes a detached layer whole.** The layer's own record changes to a frame. The layers inside it were
+    the instance's copies, which the file holds only as that instance's overrides, so the save writes each of them as a
+    record of its own. It stops at an instance or a generated frame, which writes what it holds on its own record. A
+    save with no edit still returns the opened file unchanged, and a detach changes only that layer and the layers
+    inside it.
+- **The limits:**
+  - **An instance on a page not yet shown keeps nothing it changed on that layer's copy,** such as the dot's colour in
+    that one instance.
+    - When: on that page's first load after the change, or on a save.
+    - The copy becomes the component's layer as it is now.
+    - Keeping the instance's own change waits for a later change to how a page load builds instances.
+  - **After an undo of a detach, a copy built while the layer was detached keeps the frame's type in that window.** A
+    page shown in between, or an instance two levels down, keeps a frame where the component again holds an instance.
+    The saved file is right. A person reopens the design to see it right.
+  - **After an undo of a detach, the instance stays out of the instance index.** This one is upstream's: the index
+    checks the type before the undo writes INSTANCE back (`packages/scene-graph/src/graph.ts`). Later edits to its
+    component don't reach it in that window, and the save skips it when it writes the component's instances. A person
+    reopens the design after undoing a detach, before editing that component.
 - **The setting:** none; this is a fix. If upstream fixes it, take theirs and drop this change.
 - **The files:**
   - `packages/scene-graph/src/instances/index.ts` (`detachInstance`);
-  - `packages/fig/src/instance-overrides/source-children.ts` (`reconcileOccurrenceStructure`, `isDetachedSince`);
+  - `packages/fig/src/instance-overrides/source-children.ts` (`reconcileOccurrenceStructure`, `changedTypeSince`);
+  - `packages/fig/src/node-change/convert.ts` (`resolveNodeType`, now exported);
+  - `packages/core/src/io/formats/fig/export/patch/index.ts` (`planRecords`, `addUnrecordedDescendants`);
   - `tests/integration/collab/cloud/component-detach.test.ts`.
 
 ## What still reaches outside

@@ -715,7 +715,8 @@ function convertVectorAndStrokeProps(nc: NodeChange, blobs: Uint8Array[]) {
   }
 }
 
-function resolveNodeType(nc: NodeChange): NodeType | 'DOCUMENT' | 'VARIABLE' {
+/** The kind of node a node change makes, as `nodeChangeToProps` gives it, without converting the rest. */
+export function resolveNodeType(nc: NodeChange): NodeType | 'DOCUMENT' | 'VARIABLE' {
   const nodeType = mapNodeType(nc.type)
   if (
     (nodeType === 'FRAME' && isComponentSetRecord(nc)) ||

@@ -1,6 +1,7 @@
 import type { SceneGraph, SceneNode } from '@open-pencil/scene-graph'
 import { setInstanceOverride } from '@open-pencil/scene-graph/instances/overrides'
 
+import { resolveNodeType } from '../node-change'
 import type { MaterializedInstance } from './materialize-instance'
 import { occurrences } from './occurrence/path'
 import type { InstanceOccurrence } from './occurrence/types'
@@ -32,7 +33,7 @@ export function reconcileOccurrenceStructure(
     const liveIndex = (child: InstanceOccurrence): number | undefined => {
       const counterpart = sourceChildren.get(child.sourceId)
       const node = counterpart && nodes.get(counterpart)
-      if (!counterpart || !node || isDetachedSince(graph, counterpart, node)) return undefined
+      if (!counterpart || !node || changedTypeSince(graph, child, node)) return undefined
       return liveOrder.get(node.id)
     }
     current.children = current.children
@@ -50,12 +51,13 @@ export function reconcileOccurrenceStructure(
 }
 
 /**
- * Whether a component's layer that was an instance in the file is none now: a detach made it a
- * frame. A new instance leaves its copy out, as it does a deleted layer's, and the instance's sync
- * after its build copies the frame in. What the file's instance changed on that copy is not kept.
+ * Whether a component's layer no longer has the type the file gives an instance's copy of it: a
+ * detach made an instance a frame, or a group became a frame, or a frame a group. A new instance
+ * leaves its copy out, as it does a deleted layer's, and the instance's sync after its build
+ * copies the layer in as it is now. What the file's instance changed on that copy is not kept.
  */
-function isDetachedSince(graph: SceneGraph, source: InstanceOccurrence, layer: SceneNode): boolean {
-  return source.mainComponentId !== null && graph.getNode(layer.id)?.type !== 'INSTANCE'
+function changedTypeSince(graph: SceneGraph, copy: InstanceOccurrence, layer: SceneNode): boolean {
+  return graph.getNode(layer.id)?.type !== resolveNodeType(copy.properties)
 }
 
 /**

@@ -265,6 +265,29 @@ function stylePositions(graph: SceneGraph, records: Set<string>, orderKeys: Map<
   placed.forEach((style, index) => orderKeys.set(style.id, keys[saved.length + index]))
 }
 
+/**
+ * The layers inside written layers that the archive holds no record of are written too: a
+ * detached instance's layers were its copies, which the archive holds only as that instance's
+ * overrides. An instance or a generated frame writes what it holds on its own record, so the walk
+ * stops at one.
+ */
+function addUnrecordedDescendants(
+  graph: SceneGraph,
+  records: Set<string>,
+  archived: ArchiveRecords
+): void {
+  const pending = [...records]
+  for (let id = pending.pop(); id !== undefined; id = pending.pop()) {
+    const node = graph.getNode(id)
+    if (!node || node.type === 'INSTANCE' || isGeneratedFrame(node)) continue
+    for (const childId of node.childIds) {
+      if (archived.byNode.has(childId) || records.has(childId)) continue
+      records.add(childId)
+      pending.push(childId)
+    }
+  }
+}
+
 function planRecords(
   graph: SceneGraph,
   changes: ArchiveChangeSummary,
@@ -282,6 +305,7 @@ function planRecords(
   addComponentInstances(graph, records, add)
   const replaceVariables = changes.changedVariables.size > 0 || changes.collectionsChanged
   if (replaceVariables) addVariableUsers(graph, changes, add)
+  addUnrecordedDescendants(graph, records, archived)
   const orderKeys = siblingPositions(graph, records)
   stylePositions(graph, records, orderKeys)
   const removed: GUID[] = []
