@@ -1,15 +1,17 @@
 /**
  * A layer whose type changes in place, inside a component a tab's reader built or on a page: a
- * detach, or a group turned into a frame. Later pages with an instance of that component show the
- * layer as the component now has it, every save goes through, and the saved file reopens with the
- * layer and all it holds, in one window and in two.
+ * detach, a group turned into a frame or a frame turned into a group; and a layer deleted inside a
+ * component. Later pages with an instance of that component show the layer as the component now
+ * has it, every save goes through, and the saved file reopens with the layer and all it holds, in
+ * one window and in two. Such an instance loses what it changed on that layer or inside it, and
+ * keeps what it changed on the component's other layers.
  */
 import 'fake-indexeddb/auto'
 import { afterEach, describe, expect, test } from 'bun:test'
 
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
 import { initCodec } from '@open-pencil/kiwi/fig/codec'
-import { SceneGraph, type SceneNode } from '@open-pencil/scene-graph'
+import { type Fill, SceneGraph, type SceneNode } from '@open-pencil/scene-graph'
 
 import { createEditorStore, type EditorStore } from '@/app/editor/session'
 
@@ -141,14 +143,27 @@ function tree(graph: SceneGraph, node: SceneNode): Layer {
   }
 }
 
-/** The top layer named `name` on a page, the last one where a page holds several, as a tree. */
-function layerOn(graph: SceneGraph, page: string, name: string): Layer {
+/** The top layer named `name` on a page, the last one where a page holds several. */
+function topLayer(graph: SceneGraph, page: string, name: string): SceneNode {
   const node = graph
     .getChildren(pageNamed(graph, page))
     .findLast((candidate) => candidate.name === name)
   if (!node) throw new Error(`Expected ${name} on ${page}`)
-  return tree(graph, node)
+  return node
 }
+
+const layerOn = (graph: SceneGraph, page: string, name: string): Layer =>
+  tree(graph, topLayer(graph, page, name))
+
+function childNamed(graph: SceneGraph, parentId: string, name: string): SceneNode {
+  const child = graph.getChildren(parentId).find((node) => node.name === name)
+  if (!child) throw new Error(`Expected ${name}`)
+  return child
+}
+
+/** A layer of the component named `component` on Parts, in its copy on top. */
+const inComponent = (tab: EditorStore, component: string, name: string): SceneNode =>
+  childNamed(tab.graph, topLayer(tab.graph, 'Parts', component).id, name)
 
 const layer = (name: string, type: string, size: string, children: Layer[] = []): Layer => ({
   name,
@@ -177,9 +192,11 @@ const barWith = (dotLayer: Layer) =>
   ])
 
 /**
- * A Bar read before its component changed, on a page shown or a page an earlier save read. Any
- * change to a component gives the copies already read the component's sizes, and such a copy
- * takes a new name but keeps its type until the design is reopened.
+ * A Bar read before its component changed, on a page shown or a page an earlier save read. Its
+ * sizes pin a fault of the instance sync: any change inside a component, a plain rename included,
+ * puts the component's sizes over the sizes Figma derived for the copies already read, in the
+ * window and in the save. Such a copy also takes a new name but keeps its type until the design is
+ * reopened.
  */
 const shownBarWith = (dotLayer: Layer) =>
   layer('Bar', 'INSTANCE', '396×8', [
@@ -190,11 +207,7 @@ const shownBarWith = (dotLayer: Layer) =>
 
 /** Detaches, with the editor's own action, the dot in the copy of the bar's component on top. */
 function detachDot(tab: EditorStore, rename?: string): void {
-  const progress = tab.graph
-    .getChildren(pageNamed(tab.graph, 'Parts'))
-    .findLast((node) => node.name === 'Progress')
-  const dot = progress && tab.graph.getChildren(progress.id).find((node) => node.name === 'Dot')
-  if (!dot) throw new Error('Expected the dot in the bar’s component')
+  const dot = inComponent(tab, 'Progress', 'Dot')
   tab.select([dot.id])
   tab.detachInstance()
   if (rename) tab.updateNodeWithUndo(dot.id, { name: rename }, 'Rename')
@@ -263,7 +276,7 @@ describe('a detach inside a component the tab built, then a page with an instanc
       expect(layerOn(undone, 'Parts', 'Progress')).toEqual(progressWith(instance))
       expect(layerOn(undone, 'More', 'Bar')).toEqual(barWith(instance))
       expect(layerOn(redone, 'Parts', 'Progress')).toEqual(progressWith(dotFrame('Dot')))
-      // The first save read More, so the redo gives its Bar the component's sizes.
+      // The first save read More, so the sync's size fault that shownBarWith pins reaches its Bar.
       expect(layerOn(redone, 'More', 'Bar')).toEqual(shownBarWith(dotFrame('Dot')))
       expect(layerOn(tab.graph, 'Parts', 'Progress')).toEqual(progressWith(dotFrame('Dot')))
     })
@@ -296,9 +309,11 @@ describe('a detach inside a component the tab built, then a page with an instanc
       const anns = await save(ann)
 
       // Bob's reader built the copy Ann detached. Ann's own copy may stay beside it on Parts, so
-      // her More may keep the dot, and only that her page and save go through is checked.
+      // her More may keep the dot: her save is checked on the copy she detached, and her More only
+      // for going through.
       expect(layerOn(bobs, 'More', 'Bar')).toEqual(barWith(dotFrame('Badge')))
       expect(layerOn(bob.graph, 'More', 'Bar')).toEqual(barWith(dotFrame('Badge')))
+      expect(layerOn(anns, 'Parts', 'Progress')).toEqual(progressWith(dotFrame('Badge')))
       expect(layerOn(anns, 'More', 'Bar').children.map((child) => child.name)).toContain('Fill')
       expect(layerOn(ann.graph, 'More', 'Bar').children.map((child) => child.name)).toContain(
         'Fill'
@@ -344,13 +359,7 @@ describe('a group inside a component turned into a frame, then a page with an in
       const tab = await tabReading(reader, await storedFile())
       await showPage(tab, 'Screens')
       await settle()
-      const component = tab.graph
-        .getChildren(pageNamed(tab.graph, 'Parts'))
-        .find((node) => node.name === 'Card')
-      const cap =
-        component && tab.graph.getChildren(component.id).find((node) => node.name === 'Cap')
-      if (!cap) throw new Error('Expected the group in Card')
-      tab.convertLayerType(cap.id, 'FRAME')
+      tab.convertLayerType(inComponent(tab, 'Card', 'Cap').id, 'FRAME')
       await settle()
       await showPage(tab, 'More')
       await settle()
@@ -360,6 +369,214 @@ describe('a group inside a component turned into a frame, then a page with an in
       expect(layerOn(saved, 'Parts', 'Card')).toEqual(card('FRAME'))
       expect(layerOn(saved, 'More', 'Tile')).toEqual(card('FRAME', 'Tile', 'INSTANCE'))
       expect(layerOn(tab.graph, 'More', 'Tile')).toEqual(card('FRAME', 'Tile', 'INSTANCE'))
+    })
+  }
+})
+
+const RED: Fill = { type: 'SOLID', color: { r: 1, g: 0, b: 0, a: 1 }, opacity: 1, visible: true }
+const BLUE: Fill = { type: 'SOLID', color: { r: 0, g: 0, b: 1, a: 1 }, opacity: 1, visible: true }
+
+/** Badge's three layers that a Tag overrides, each with the shape and the text inside it. */
+const BADGE_LAYERS = {
+  PipIn: { shape: ['Core', 'ELLIPSE'], text: ['Label', 'Pip'] },
+  Cap: { shape: ['Tick', 'RECTANGLE'], text: ['Note', 'Note'] },
+  Box: { shape: ['Mark', 'RECTANGLE'], text: ['Word', 'Word'] }
+} as const
+type BadgeLayer = keyof typeof BADGE_LAYERS
+
+/**
+ * Cover; Screens with a Tag; Parts with Pip and Badge, which holds an instance of Pip, a group and
+ * a frame, each with a blue shape and a text inside; and More with a Tag that hides each of the
+ * three, fills the shape inside it red and changes the text inside it. Showing Screens builds
+ * Badge and Pip, and nothing reads More until a tab shows it or a save reads it.
+ */
+async function overriddenFile(): Promise<Uint8Array> {
+  await initCodec()
+  const graph = new SceneGraph()
+  const [cover] = graph.getPages()
+  if (!cover) throw new Error('Expected a page')
+  graph.updateNode(cover.id, { name: 'Cover' })
+  const screens = graph.addPage('Screens')
+  const parts = graph.addPage('Parts')
+  const more = graph.addPage('More')
+  const pip = graph.createNode('COMPONENT', parts.id, { name: 'Pip', width: 40, height: 20 })
+  graph.createNode('ELLIPSE', pip.id, { name: 'Core', width: 8, height: 8, fills: [BLUE] })
+  graph.createNode('TEXT', pip.id, { name: 'Label', x: 10, width: 30, height: 12, text: 'Pip' })
+  const badge = graph.createNode('COMPONENT', parts.id, {
+    name: 'Badge',
+    width: 150,
+    height: 20,
+    y: 100
+  })
+  graph.createInstance(pip.id, badge.id, { name: 'PipIn' })
+  const cap = graph.createNode('GROUP', badge.id, { name: 'Cap', x: 50, width: 40, height: 20 })
+  graph.createNode('RECTANGLE', cap.id, { name: 'Tick', width: 8, height: 8, fills: [BLUE] })
+  graph.createNode('TEXT', cap.id, { name: 'Note', x: 10, width: 30, height: 12, text: 'Note' })
+  const box = graph.createNode('FRAME', badge.id, { name: 'Box', x: 100, width: 40, height: 20 })
+  graph.createNode('RECTANGLE', box.id, { name: 'Mark', width: 8, height: 8, fills: [BLUE] })
+  graph.createNode('TEXT', box.id, { name: 'Word', x: 10, width: 30, height: 12, text: 'Word' })
+  graph.createInstance(badge.id, screens.id, { name: 'Tag' })
+  const tag = graph.createInstance(badge.id, more.id, { name: 'Tag' })
+  if (!tag) throw new Error('Expected the Tag on More')
+  // The editor's own edits, so each one is an override the Tag holds.
+  const author = createEditorStore(graph)
+  for (const [name, { shape, text }] of Object.entries(BADGE_LAYERS)) {
+    const layer = childNamed(graph, tag.id, name)
+    author.updateNodeWithUndo(childNamed(graph, layer.id, shape[0]).id, { fills: [RED] }, 'Fill')
+    author.updateNodeWithUndo(childNamed(graph, layer.id, text[0]).id, { text: 'Changed' }, 'Text')
+    author.updateNodeWithUndo(layer.id, { visible: false }, 'Hide')
+  }
+  await settle()
+  const bytes = await exportFigFile(graph)
+  author.preparationController.dispose()
+  return bytes
+}
+
+/** A layer and all it holds: each one's name, type and visibility, a shape's fill, a text's words. */
+interface Look {
+  name: string
+  type: string
+  visible: boolean
+  fill?: string
+  text?: string
+  children: Look[]
+}
+
+const COLOR_NAMES = new Map([
+  ['1,0,0', 'red'],
+  ['0,0,1', 'blue']
+])
+
+function colorName({ color }: Fill): string {
+  const rgb = `${color.r},${color.g},${color.b}`
+  return COLOR_NAMES.get(rgb) ?? rgb
+}
+
+function look(graph: SceneGraph, node: SceneNode): Look {
+  const seen: Look = {
+    name: node.name,
+    type: node.type,
+    visible: node.visible,
+    children: graph.getChildren(node.id).map((child) => look(graph, child))
+  }
+  const [paint] = node.fills
+  if (paint && (node.type === 'RECTANGLE' || node.type === 'ELLIPSE')) seen.fill = colorName(paint)
+  if (node.type === 'TEXT') seen.text = node.text
+  return seen
+}
+
+const lookOn = (graph: SceneGraph, page: string, name: string): Look =>
+  look(graph, topLayer(graph, page, name))
+
+/** One of Badge's layers in the Tag on More, with the Tag's overrides or as Badge has it. */
+function badgeLayer(name: BadgeLayer, type: string, overridden: boolean): Look {
+  const {
+    shape: [shape, shapeType],
+    text: [text, words]
+  } = BADGE_LAYERS[name]
+  return {
+    name,
+    type,
+    visible: !overridden,
+    children: [
+      {
+        name: shape,
+        type: shapeType,
+        visible: true,
+        fill: overridden ? 'red' : 'blue',
+        children: []
+      },
+      {
+        name: text,
+        type: 'TEXT',
+        visible: true,
+        text: overridden ? 'Changed' : words,
+        children: []
+      }
+    ]
+  }
+}
+
+const tagWith = (...layers: Look[]): Look => ({
+  name: 'Tag',
+  type: 'INSTANCE',
+  visible: true,
+  children: layers
+})
+
+describe('a change inside a component that an instance on a page not yet shown overrides, on the changed layer and inside it', () => {
+  const detachPipIn = {
+    steps: 'detaches PipIn',
+    change: (tab: EditorStore) => {
+      tab.select([inComponent(tab, 'Badge', 'PipIn').id])
+      tab.detachInstance()
+    },
+    tag: tagWith(
+      badgeLayer('PipIn', 'FRAME', false),
+      badgeLayer('Cap', 'GROUP', true),
+      badgeLayer('Box', 'FRAME', true)
+    )
+  }
+  const changes = [
+    detachPipIn,
+    {
+      steps: 'turns the Cap group into a frame',
+      change: (tab: EditorStore) =>
+        tab.convertLayerType(inComponent(tab, 'Badge', 'Cap').id, 'FRAME'),
+      tag: tagWith(
+        badgeLayer('PipIn', 'INSTANCE', true),
+        badgeLayer('Cap', 'FRAME', false),
+        badgeLayer('Box', 'FRAME', true)
+      )
+    },
+    {
+      steps: 'turns the Box frame into a group',
+      change: (tab: EditorStore) =>
+        tab.convertLayerType(inComponent(tab, 'Badge', 'Box').id, 'GROUP'),
+      tag: tagWith(
+        badgeLayer('PipIn', 'INSTANCE', true),
+        badgeLayer('Cap', 'GROUP', true),
+        badgeLayer('Box', 'GROUP', false)
+      )
+    },
+    {
+      steps: 'deletes PipIn',
+      change: (tab: EditorStore) => {
+        tab.select([inComponent(tab, 'Badge', 'PipIn').id])
+        tab.deleteSelected()
+      },
+      tag: tagWith(badgeLayer('Cap', 'GROUP', true), badgeLayer('Box', 'FRAME', true))
+    }
+  ]
+
+  for (const reader of READERS) {
+    for (const { steps, change, tag } of changes) {
+      test(`one window reading on ${reader}: shows Screens, ${steps} in Badge, then shows More and saves`, async () => {
+        const tab = await tabReading(reader, await overriddenFile())
+        await showPage(tab, 'Screens')
+        await settle()
+        change(tab)
+        await settle()
+        await showPage(tab, 'More')
+        await settle()
+
+        const saved = await save(tab)
+
+        expect(lookOn(tab.graph, 'More', 'Tag')).toEqual(tag)
+        expect(lookOn(saved, 'More', 'Tag')).toEqual(tag)
+      })
+    }
+
+    test(`one window reading on ${reader}: shows Screens, detaches PipIn in Badge, and saves, the save alone reading More`, async () => {
+      const tab = await tabReading(reader, await overriddenFile())
+      await showPage(tab, 'Screens')
+      await settle()
+      detachPipIn.change(tab)
+      await settle()
+
+      const saved = await save(tab)
+
+      expect(lookOn(saved, 'More', 'Tag')).toEqual(detachPipIn.tag)
     })
   }
 })

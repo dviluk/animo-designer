@@ -3,7 +3,7 @@ import { setInstanceOverride } from '@open-pencil/scene-graph/instances/override
 
 import { resolveNodeType } from '../node-change'
 import type { MaterializedInstance } from './materialize-instance'
-import { occurrences } from './occurrence/path'
+import { type LeftOutCopies, occurrences } from './occurrence/path'
 import type { InstanceOccurrence } from './occurrence/types'
 
 export interface MaterializedComponentOccurrence {
@@ -11,13 +11,19 @@ export interface MaterializedComponentOccurrence {
   materialized: MaterializedInstance
 }
 
+/**
+ * Bring an occurrence tree read from the file in line with the components as they are live: a copy
+ * whose layer is gone, moved out, or of another type is left out, and recorded in `leftOut`.
+ */
 export function reconcileOccurrenceStructure(
   target: InstanceOccurrence,
   graph: SceneGraph,
-  components: ReadonlyMap<string, MaterializedComponentOccurrence>
+  components: ReadonlyMap<string, MaterializedComponentOccurrence>,
+  leftOut: LeftOutCopies
 ): void {
   if (target.mainComponentId === null) {
-    for (const child of target.children) reconcileOccurrenceStructure(child, graph, components)
+    for (const child of target.children)
+      reconcileOccurrenceStructure(child, graph, components, leftOut)
     return
   }
   const component = components.get(target.mainComponentId)
@@ -36,14 +42,19 @@ export function reconcileOccurrenceStructure(
       if (!counterpart || !node || changedTypeSince(graph, child, node)) return undefined
       return liveOrder.get(node.id)
     }
-    current.children = current.children
-      .filter((child) => liveIndex(child) !== undefined)
-      .toSorted((a, b) => (liveIndex(a) ?? 0) - (liveIndex(b) ?? 0))
+    const kept: InstanceOccurrence[] = []
+    const dropped: InstanceOccurrence[] = []
+    for (const child of current.children) {
+      if (liveIndex(child) === undefined) dropped.push(child)
+      else kept.push(child)
+    }
+    if (dropped.length > 0) leftOut.set(current, [...(leftOut.get(current) ?? []), ...dropped])
+    current.children = kept.toSorted((a, b) => (liveIndex(a) ?? 0) - (liveIndex(b) ?? 0))
     for (const child of current.children) {
       const counterpart = sourceChildren.get(child.sourceId)
       // Nested instances answer to their own components; slot content is the instance's own.
       if (child.mainComponentId !== null || child.slotContentId || !counterpart) {
-        reconcileOccurrenceStructure(child, graph, components)
+        reconcileOccurrenceStructure(child, graph, components, leftOut)
       } else reconcileLayers(child, counterpart)
     }
   }

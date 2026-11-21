@@ -9,6 +9,7 @@ import {
   syncSourceLayers
 } from '../instance-overrides/live-component-edits'
 import { materializeInstance } from '../instance-overrides/materialize-instance'
+import type { LeftOutCopies } from '../instance-overrides/occurrence/path'
 import type {
   InstanceOccurrence,
   InterpretInstanceOptions
@@ -314,8 +315,10 @@ function materializeReaderInto(
    * component would copy its sizes over the sizes Figma derived for instances placed earlier.
    */
   const resync = new Set<string>()
+  /** What the reconcile leaves out of this load's trees, which the file's overrides may still name. */
+  const leftOutCopies: LeftOutCopies = new Map()
   const buildComponent = (item: ComponentConstruction): void => {
-    if (edited) reconcileOccurrenceStructure(item.occurrence, graph, components)
+    if (edited) reconcileOccurrenceStructure(item.occurrence, graph, components, leftOutCopies)
     const parentId = sources.get(item.parentSourceId)
     if (!parentId) throw new Error(`Unmaterialized component parent ${item.parentSourceId}`)
     const existingNodes = new Map<InstanceOccurrence, SceneNode>()
@@ -336,7 +339,8 @@ function materializeReaderInto(
       blobs,
       sourceChildren: mapInstanceSourceChildren(item.occurrence, components),
       existingNodes,
-      recordId
+      recordId,
+      leftOutCopies
     })
     rememberDerivedSizes(built.nodes)
     if (edited) {
@@ -366,13 +370,14 @@ function materializeReaderInto(
     if (!parentId) throw new Error(`Missing source container ${occurrence.sourceId}`)
     const ordered: string[] = []
     for (const child of occurrence.children) {
-      if (edited) reconcileOccurrenceStructure(child, graph, components)
+      if (edited) reconcileOccurrenceStructure(child, graph, components, leftOutCopies)
       if (child.mainComponentId !== null && !sources.has(child.sourceId)) {
         onProgress?.()
         const materialized = materializeInstance(graph, parentId, child, componentIds, {
           blobs,
           sourceChildren: mapInstanceSourceChildren(child, components),
-          recordId
+          recordId,
+          leftOutCopies
         })
         rememberDerivedSizes(materialized.nodes)
         linkInstanceSourceChildren(child, materialized, components)

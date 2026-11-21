@@ -1,5 +1,6 @@
 import { isEqual } from 'es-toolkit/predicate'
 
+import type { GUID } from '@open-pencil/kiwi/fig'
 import type { Effect as KiwiEffect, NodeChange, Paint } from '@open-pencil/kiwi/fig/codec'
 import type { SceneGraph, SceneNode } from '@open-pencil/scene-graph'
 import { scaleGeometryPaths } from '@open-pencil/scene-graph/copy'
@@ -24,6 +25,7 @@ import {
 } from './bindings/variables'
 import { OVERRIDE_FIELDS, type OverrideField, type RawOverrideField } from './fields'
 import { resolveOccurrencePath } from './interpret'
+import { type LeftOutCopies, reachesLeftOutCopy, SegmentError } from './occurrence/path'
 import type { InstanceOccurrence } from './occurrence/types'
 import { isClearedStyle } from './style/cleared'
 import { symbolDataOf } from './types'
@@ -118,6 +120,8 @@ export interface MaterializeInstanceOptions {
    * its saved GUID, so it keeps one id across loads. Undefined creates it under a fresh id.
    */
   recordId?: (occurrence: InstanceOccurrence) => string | undefined
+  /** The copies this materialization's reconcile left out of the occurrence trees it builds. */
+  leftOutCopies?: LeftOutCopies
 }
 
 /** A document or a variable is a resource record, never a node in an expansion. */
@@ -254,7 +258,7 @@ export function materializeInstance(
     return node
   }
   const root = create(occurrence, parentId)
-  recordPropertyClaims(nodes)
+  recordPropertyClaims(nodes, options.leftOutCopies ?? new Map())
   return { root, nodes }
 }
 
@@ -351,11 +355,38 @@ function recordEffectBindingClaims(owner: SceneNode, target: SceneNode, effects:
   if (declared) setInstanceOverride(owner.instanceOverrides, owner.id, target.id, 'boundVariables')
 }
 
-function recordPropertyClaims(nodes: ReadonlyMap<InstanceOccurrence, SceneNode>): void {
+/**
+ * The layer a claim names. A claim is skipped only when its path reaches a copy that this
+ * materialization's reconcile left out, the copy itself or anything inside it: the instance's sync
+ * copies that layer in as its component now has it. Every other missing target still throws.
+ */
+function claimTarget(
+  owner: InstanceOccurrence,
+  path: readonly GUID[],
+  leftOut: LeftOutCopies
+): InstanceOccurrence | undefined {
+  try {
+    return resolveOccurrencePath(owner, path)
+  } catch (error) {
+    if (
+      error instanceof SegmentError &&
+      error.count === 0 &&
+      reachesLeftOutCopy(owner, path, leftOut)
+    )
+      return undefined
+    throw error
+  }
+}
+
+function recordPropertyClaims(
+  nodes: ReadonlyMap<InstanceOccurrence, SceneNode>,
+  leftOut: LeftOutCopies
+): void {
   for (const [ownerOccurrence, owner] of nodes) {
     if (owner.type !== 'INSTANCE') continue
     for (const claim of ownerOccurrence.propertyClaims) {
-      const targetOccurrence = resolveOccurrencePath(ownerOccurrence, claim.path)
+      const targetOccurrence = claimTarget(ownerOccurrence, claim.path, leftOut)
+      if (!targetOccurrence) continue
       const target = nodes.get(targetOccurrence)
       if (!target) throw new Error('Unmaterialized property claim target')
       for (const raw of Object.keys(OVERRIDE_FIELDS) as RawOverrideField[]) {

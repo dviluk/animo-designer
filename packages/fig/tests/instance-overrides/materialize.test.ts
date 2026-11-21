@@ -139,3 +139,49 @@ test('an instance of a deleted component stays a childless instance when acknowl
   expect(node.componentId).toBeNull()
   expect(node.childIds).toEqual([])
 })
+
+/**
+ * An instance of a component that holds a frame with a rectangle inside and a rectangle beside it,
+ * after a page load's reconcile left the frame's copy out of it. The instance hides the inner
+ * rectangle and halves the outer one's opacity. With `outerGone`, the outer rectangle's copy is
+ * missing too, though no reconcile left it out.
+ */
+function frameLeftOut(outerGone: boolean) {
+  const changes = [
+    { guid: guid(1, 5), type: 'SYMBOL' },
+    { guid: guid(2, 5), type: 'FRAME', parentIndex: { guid: guid(1, 5), position: '!' } },
+    { guid: guid(3, 5), type: 'RECTANGLE', parentIndex: { guid: guid(2, 5), position: '!' } },
+    { guid: guid(4, 5), type: 'RECTANGLE', parentIndex: { guid: guid(1, 5), position: '"' } },
+    {
+      guid: guid(5, 5),
+      type: 'INSTANCE',
+      symbolData: {
+        symbolID: guid(1, 5),
+        symbolOverrides: [
+          { guidPath: { guids: [guid(3, 5)] }, visible: false },
+          { guidPath: { guids: [guid(4, 5)] }, opacity: 0.5 }
+        ]
+      }
+    }
+  ] as NodeChange[]
+  const occurrence = interpretInstance(changes, '5:5')
+  const [frame, outer] = occurrence.children
+  occurrence.children = outerGone ? [] : [expectDefined(outer)]
+  const graph = new SceneGraph()
+  const page = graph.getPages()[0]
+  const components = new Map([['5:1', graph.createNode('COMPONENT', page.id).id]])
+  const leftOutCopies = new Map([[occurrence, [expectDefined(frame)]]])
+  return () => materializeInstance(graph, page.id, occurrence, components, { leftOutCopies })
+}
+
+test('an override inside a copy a page load left out is not kept, and the others are', () => {
+  const { root, nodes } = frameLeftOut(false)()
+  const built = [...nodes.values()]
+  expect(built.map((node) => node.type)).toEqual(['INSTANCE', 'RECTANGLE'])
+  const outer = expectDefined(built[1])
+  expect(root.instanceOverrides.descendants.get(outer.id)?.get('opacity')).toBe(0.5)
+})
+
+test('an override whose layer is missing for any other reason still throws', () => {
+  expect(frameLeftOut(true)).toThrow('Expected one instance-path target for 5:4; found 0')
+})
