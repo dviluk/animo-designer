@@ -299,7 +299,9 @@ function outermostNestedInstances(graph: SceneGraph, instance: SceneNode): Scene
  * An instance a detached one holds stands on its own once that one is a frame, and so must what
  * makes it differ from its component. Cloned in, it kept the overrides of the instance it copies,
  * under that instance's layers; those, and the ones the detached instance recorded on its layers,
- * now go under its own.
+ * now go under its own. Which layer each of its layers copies stays as it recorded it: the
+ * detached instance named a layer of its own component there, which a save or a copy of this
+ * instance would look for in vain.
  */
 function adoptNestedOverrides(graph: SceneGraph, detached: SceneNode, nested: SceneNode): void {
   const ownLayer = new Map<string, string>()
@@ -322,7 +324,10 @@ function adoptNestedOverrides(graph: SceneGraph, detached: SceneNode, nested: Sc
   for (const [layerId, fields] of outer) {
     if (layerId === nested.id) {
       for (const [field, value] of fields) if (!OWNER_ONLY_FIELDS.has(field)) self.set(field, value)
-    } else if (graph.isDescendant(layerId, nested.id)) claim(layerId, fields)
+    } else if (graph.isDescendant(layerId, nested.id)) {
+      const changes = new Map([...fields].filter(([field]) => field !== 'sourceComponentId'))
+      if (changes.size > 0) claim(layerId, changes)
+    }
   }
   graph.updateNode(nested.id, { instanceOverrides: { self, descendants } })
 }

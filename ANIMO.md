@@ -130,11 +130,17 @@ secrets.
     then still looks for it.
   - **A detach on a page is dropped from the save,** with any change made to that layer after it, since the save sees
     no change. The reopened design holds the instance as it was.
+  - **An instance the detached layer held takes the detached instance's record of which layer each of its layers
+    copies** (`adoptNestedOverrides`, `packages/scene-graph/src/instances/index.ts`). That record names layers of the
+    detached instance's component, which a copy of the held instance doesn't bring, so Copy of it, of the detached
+    layer or of anything holding them fails with `Missing instance geometry address`.
 - **Why we change it:** a detach, a type change, a move or a delete inside a component is an ordinary edit. After one, a window
   could neither show those pages nor save, and a detach on a page was quietly lost.
 - **What it does:**
   - **Detach writes through `graph.updateNode`,** as its undo already did. Observers see the edit, the room gets it at
     once, and the instance index drops the instance.
+  - **An instance the detached layer held keeps its own record of which layer each of its layers copies,** in its own
+    component. What the detached instance changed on those layers still moves to it.
   - **A page load into an edited drawing leaves the stale copy out of a new instance.** That is the copy of a layer
     whose type in the component is no longer the type the file gives the copy, whatever changed it: a detach, "Convert
     to frame" or "to group", or "Create component". It is left out as the copy of a deleted layer is, and the
@@ -201,7 +207,7 @@ secrets.
     reopens the design after undoing a detach, before editing that component.
 - **The setting:** none; this is a fix. If upstream fixes it, take theirs and drop this change.
 - **The files:**
-  - `packages/scene-graph/src/instances/index.ts` (`detachInstance`, `copiedLayerLinks`);
+  - `packages/scene-graph/src/instances/index.ts` (`detachInstance`, `copiedLayerLinks`, `adoptNestedOverrides`);
   - `packages/fig/src/instance-overrides/source-children.ts` (`reconcileOccurrenceStructure`, `changedTypeSince`);
   - `packages/fig/src/instance-overrides/occurrence/path.ts` (`reachesLeftOutCopy`);
   - `packages/fig/src/instance-overrides/materialize-instance.ts` (`claimTarget`);
@@ -213,7 +219,8 @@ secrets.
     copies built before a detach for an instance's claims);
   - `tests/integration/collab/cloud/component-detach.test.ts`, `component-detach-overrides.test.ts` and
     `component-detach-pairs.test.ts`, and their helper, `tests/helpers/collab/component-tabs.ts`;
-  - `packages/fig/tests/instance-overrides/materialize.test.ts`.
+  - `packages/fig/tests/instance-overrides/materialize.test.ts`;
+  - `packages/core/tests/editor/components/detach.test.ts`.
 
 ## The seventh change: the agent server keeps up to 32 sessions
 
