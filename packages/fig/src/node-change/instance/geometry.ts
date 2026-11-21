@@ -3,7 +3,10 @@ import type { DerivedSymbolOverride } from '#fig/instance-overrides/types'
 import type { GUID } from '@open-pencil/kiwi/fig'
 import type { SceneGraph, SceneNode } from '@open-pencil/scene-graph'
 import { findInstanceAncestor } from '@open-pencil/scene-graph/instances'
-import { copiedComponentLayerId } from '@open-pencil/scene-graph/instances/overrides'
+import {
+  copiedComponentLayerId,
+  getInstanceOverride
+} from '@open-pencil/scene-graph/instances/overrides'
 import { ownsSlotContent } from '@open-pencil/scene-graph/slots'
 
 type ResolveGuid = (id: string) => GUID | undefined
@@ -27,15 +30,46 @@ export function instanceExportAddress(
   if (!parent) return undefined
   const path: GUID[] = []
   let scope = owner
+  let detached: SceneNode | undefined
   for (const node of [...boundaries, target]) {
-    const sourceId = definitionSource(graph, sourceOf(scope, node))
+    const copied = definitionSource(graph, sourceOf(scope, node))
+    const sourceId = (detached && copied && layerCopying(graph, detached, copied)) ?? copied
     if (!sourceId) return undefined
     const guid = resolveGuid(sourceId)
     if (!guid) return undefined
     path.push(guid)
+    const source = graph.getNode(sourceId)
+    detached = source?.type === 'INSTANCE' ? undefined : source
     scope = node
   }
   return path
+}
+
+/**
+ * The layer of a detached instance that copies `copied`, a layer of the component it was an
+ * instance of. A copy built before the detach still names that component's layers, while the save
+ * writes the detached layer's own: each names its source in `componentId`, and an instance it
+ * held in the link the detached layer kept for it.
+ */
+function layerCopying(graph: SceneGraph, detached: SceneNode, copied: string): string | undefined {
+  const visit = (parentId: string): string | undefined => {
+    for (const child of graph.getChildren(parentId)) {
+      const isInstance = child.type === 'INSTANCE'
+      const link = isInstance
+        ? getInstanceOverride(
+            detached.instanceOverrides,
+            detached.id,
+            child.id,
+            'sourceComponentId'
+          )
+        : child.componentId
+      if (link === copied) return child.id
+      const inside = isInstance ? undefined : visit(child.id)
+      if (inside) return inside
+    }
+    return undefined
+  }
+  return visit(detached.id)
 }
 
 function sourceOf(scope: SceneNode, node: SceneNode): string | null {

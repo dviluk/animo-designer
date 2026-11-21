@@ -270,8 +270,8 @@ export function detachInstance(graph: SceneGraph, instanceId: string): void {
 /**
  * All a detached instance keeps of its overrides: the layer of its component that each instance it
  * held copies, which only it recorded. Its other layers keep theirs in `componentId`. Until a
- * reopen drops both, a save keys each layer by the layer it copies (`copiedLayerKey`,
- * `packages/fig/src/node-change/export/node.ts`).
+ * reopen drops both, a save finds through them the layer that a copy built before the detach
+ * names (`instanceExportAddress`, `packages/fig/src/node-change/instance/geometry.ts`).
  */
 function heldInstanceLinks(graph: SceneGraph, instance: SceneNode): InstanceOverrideState {
   const links = createInstanceOverrideState()

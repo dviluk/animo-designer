@@ -151,15 +151,18 @@ secrets.
     save with no edit still returns the opened file unchanged. A detach on a page changes only that layer and the
     layers inside it. A change inside a component also syncs that component's instances already read, with the size
     reset below.
-  - **The layers a detach writes as new records answer to the keys of the layers they copied.** An instance of the
-    component read before the detach saves what it changed inside that layer under paths through those keys, an
-    instance's inside it included. Until a reopen, each such layer still names the layer it copied:
+  - **A save writes what an instance read before the detach changed inside the detached layer against that layer's
+    own layers.** The window keeps such an instance as it was built, its copy of the layer still an instance, whose
+    layers copy the old component's. The save's path to each change used to name those, which the saved file no
+    longer holds. It now names the detached layer's own layer that copies the one named
+    (`instanceExportAddress`, `packages/fig/src/node-change/instance/geometry.ts`). Until a reopen, each of those
+    layers still names the one it copies:
     - a layer in its `componentId`, as upstream leaves it;
     - an instance in the link the detached layer kept for it, the one override it keeps (`heldInstanceLinks`,
       `packages/scene-graph/src/instances/index.ts`). An instance's own `componentId` names what it shows.
 
-    The save writes that layer's key on the record, resolved as it resolves the paths (`copiedLayerKey`,
-    `packages/fig/src/node-change/export/node.ts`). The reopened instance keeps those changes, in one window as in two.
+    The reopened instance keeps those changes, in one window as in two. The save adds no override key, since two
+    layers with one key in a component would make a later page load fail.
 - **The limits:**
   - **An instance on a page not yet shown keeps nothing it changed on that layer's copy or inside it,** after a
     detach as after the other changes, such as the dot's colour in that one instance.
@@ -188,9 +191,9 @@ secrets.
   - `packages/fig/src/document/materialize.ts` (the load's record of the copies it left out);
   - `packages/fig/src/node-change/convert.ts` (`resolveNodeType`, now exported);
   - `packages/core/src/io/formats/fig/export/patch/index.ts` (`planRecords`, `addUnrecordedDescendants`);
-  - `packages/fig/src/node-change/export/node.ts` (`copiedLayerKey`, `keptLink`);
-  - `tests/integration/collab/cloud/component-detach.test.ts` and its helper,
-    `tests/helpers/collab/component-tabs.ts`;
+  - `packages/fig/src/node-change/instance/geometry.ts` (`instanceExportAddress`, `layerCopying`);
+  - `tests/integration/collab/cloud/component-detach.test.ts` and `component-detach-overrides.test.ts`, and their
+    helper, `tests/helpers/collab/component-tabs.ts`;
   - `packages/fig/tests/instance-overrides/materialize.test.ts`.
 
 ## The seventh change: the agent server keeps up to 32 sessions
