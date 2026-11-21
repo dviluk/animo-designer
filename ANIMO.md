@@ -126,7 +126,8 @@ secrets.
     looks for it to record the instance's change, and fails with `Expected one instance-path target … found 0`
     (`recordPropertyClaims`, `packages/fig/src/instance-overrides/materialize-instance.ts`).
   - **A layer moved to another parent inside a component breaks them the same way,** when an instance on a page not
-    yet shown changed something on it: the load looks for the layer where the file's copy had it.
+    yet shown changed something on that layer or inside it. The page load leaves its copy out where the file had it,
+    then still looks for it.
   - **A detach on a page is dropped from the save,** with any change made to that layer after it, since the save sees
     no change. The reopened design holds the instance as it was.
 - **Why we change it:** a detach, a type change, a move or a delete inside a component is an ordinary edit. After one, a window
