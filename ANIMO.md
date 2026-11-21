@@ -217,8 +217,9 @@ secrets.
   - `packages/fig/src/node-change/instance/geometry.ts` (`instanceExportAddress`, `staleCopyNames`, `keptLinks`);
   - `packages/fig/src/node-change/export/override-claims.ts` (`serializeRuntimePropertyOverrides`, one map of the
     copies built before a detach for an instance's claims);
-  - `tests/integration/collab/cloud/component-detach.test.ts`, `component-detach-overrides.test.ts` and
-    `component-detach-pairs.test.ts`, and their helper, `tests/helpers/collab/component-tabs.ts`;
+  - `tests/integration/collab/cloud/component-detach.test.ts`, `component-detach-overrides.test.ts`,
+    `component-detach-pairs.test.ts` and `component-detach-copy.test.ts`, and their helper,
+    `tests/helpers/collab/component-tabs.ts`;
   - `packages/fig/tests/instance-overrides/materialize.test.ts`;
   - `packages/core/tests/editor/components/detach.test.ts`.
 
