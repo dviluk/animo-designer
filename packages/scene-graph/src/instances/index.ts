@@ -18,6 +18,7 @@ import {
   createInstanceOverrideState,
   getInstanceOverride,
   hasInstanceOverride as hasNodeInstanceOverride,
+  type InstanceOverrideState,
   setInstanceOverride
 } from './overrides'
 import {
@@ -254,6 +255,7 @@ function syncInstancesOf(
 export function detachInstance(graph: SceneGraph, instanceId: string): void {
   const node = graph.nodes.get(instanceId)
   if (node?.type !== 'INSTANCE') return
+  const links = heldInstanceLinks(graph, node)
   for (const nested of outermostNestedInstances(graph, node))
     adoptNestedOverrides(graph, node, nested)
   // Through the graph, as its undo goes back: observers see the edit, the room gets it, and the
@@ -261,8 +263,24 @@ export function detachInstance(graph: SceneGraph, instanceId: string): void {
   graph.updateNode(instanceId, {
     type: 'FRAME',
     componentId: null,
-    instanceOverrides: createInstanceOverrideState()
+    instanceOverrides: links
   })
+}
+
+/**
+ * All a detached instance keeps of its overrides: the layer of its component that each instance it
+ * held copies, which only it recorded. Its other layers keep theirs in `componentId`. Until a
+ * reopen drops both, a save keys each layer by the layer it copies (`copiedLayerKey`,
+ * `packages/fig/src/node-change/export/node.ts`).
+ */
+function heldInstanceLinks(graph: SceneGraph, instance: SceneNode): InstanceOverrideState {
+  const links = createInstanceOverrideState()
+  walkInstanceSources(graph, instance, (source, copy) => {
+    if (copy.type !== 'INSTANCE') return true
+    setInstanceOverride(links, instance.id, copy.id, 'sourceComponentId', source.id)
+    return false
+  })
+  return links
 }
 
 // A swap's bookkeeping belongs to the instance enclosing the swapped one, never to the swapped one.

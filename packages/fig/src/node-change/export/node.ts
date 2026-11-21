@@ -20,6 +20,7 @@ import {
   DEFAULT_STROKE_WEIGHT
 } from '@open-pencil/scene-graph/constants'
 import { isGeneratedFrame } from '@open-pencil/scene-graph/generated'
+import { getInstanceOverride } from '@open-pencil/scene-graph/instances/overrides'
 import {
   layoutGridAlignment,
   layoutGridColor,
@@ -708,19 +709,38 @@ function propertyDefinitionRecord(
 }
 
 /**
- * The key of the component layer that a layer written as its own record still copies, which a
- * detached instance's layers keep until a reopen. Instances of the component holding it saved their
- * changes inside it under paths through that key, so the record answers to it. An instance's
- * `componentId` names its main component instead, and an instance's copies are never records.
+ * The key of the component layer that a layer written as its own record still copies, as a
+ * detached instance's layers do until a reopen. Instances of the component holding it saved their
+ * changes inside it under paths through that key, so the record answers to it, resolved as those
+ * paths are.
  */
 function copiedLayerKey(
   context: SceneNodeToKiwiContext,
   node: SceneNode,
   localIdCounter: { value: number }
 ): GUID | null {
-  if (node.type === 'INSTANCE' || !node.componentId || !context.graph.getNode(node.componentId))
-    return null
-  return instanceGuidResolver(context, localIdCounter)(node.componentId) ?? null
+  const copied = node.type === 'INSTANCE' ? keptLink(context.graph, node) : node.componentId
+  if (!copied || !context.graph.getNode(copied)) return null
+  return instanceGuidResolver(context, localIdCounter)(copied) ?? null
+}
+
+/**
+ * The layer an instance copies, as the detached instance that held it kept it. Its own
+ * `componentId` names what it shows, which a swap replaces.
+ */
+function keptLink(graph: SceneGraph, node: SceneNode): string | null {
+  let ancestor = node.parentId ? graph.getNode(node.parentId) : undefined
+  while (ancestor) {
+    const linked = getInstanceOverride(
+      ancestor.instanceOverrides,
+      ancestor.id,
+      node.id,
+      'sourceComponentId'
+    )
+    if (typeof linked === 'string') return linked
+    ancestor = ancestor.parentId ? graph.getNode(ancestor.parentId) : undefined
+  }
+  return null
 }
 
 function applyComponentMetadata(

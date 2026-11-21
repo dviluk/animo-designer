@@ -108,7 +108,7 @@ secrets.
   On a merge conflict in the reference, resolve the source and run `bun run generate:authoring-reference`; never
   hand-merge the copies.
 
-## The sixth change: a detach, a type change, a move or a delete inside a component no longer breaks later pages, and a detach's save keeps the layer
+## The sixth change: a detach, a type change, a move or a delete inside a component no longer breaks later pages, and a detach's save keeps the layer and what instances read before it changed inside it
 
 - **What upstream does:**
   - **Detach turns the layer into a frame in place without telling the graph** (`detachInstance`,
@@ -151,24 +151,21 @@ secrets.
     save with no edit still returns the opened file unchanged. A detach on a page changes only that layer and the
     layers inside it. A change inside a component also syncs that component's instances already read, with the size
     reset below.
+  - **The layers a detach writes as new records answer to the keys of the layers they copied.** An instance of the
+    component read before the detach saves what it changed inside that layer under paths through those keys, an
+    instance's inside it included. Until a reopen, each such layer still names the layer it copied:
+    - a layer in its `componentId`, as upstream leaves it;
+    - an instance in the link the detached layer kept for it, the one override it keeps (`heldInstanceLinks`,
+      `packages/scene-graph/src/instances/index.ts`). An instance's own `componentId` names what it shows.
+
+    The save writes that layer's key on the record, resolved as it resolves the paths (`copiedLayerKey`,
+    `packages/fig/src/node-change/export/node.ts`). The reopened instance keeps those changes, in one window as in two.
 - **The limits:**
-  - **An instance on a page not yet shown keeps nothing it changed on that layer's copy or inside it,** such as the
-    dot's colour in that one instance.
+  - **An instance on a page not yet shown keeps nothing it changed on that layer's copy or inside it,** after a
+    detach as after the other changes, such as the dot's colour in that one instance.
     - When: on that page's first load after the change, or on a save.
     - The copy becomes the component's layer as it is now. The page shows, and the save goes through.
     - Keeping the instance's own change waits for a later change to how a page load builds instances.
-  - **After a detach inside a component, an instance read before it loses at the save what it changed inside the
-    detached layer,** in one window as in two. Say the owner colours an icon in instances across a design, then detaches
-    that icon inside its component:
-    - The window still shows each instance's colour.
-    - The save keeps what each instance changed on the layer itself, such as hiding it, and on the component's other
-      layers. But the layers inside the detached one are saved as new layers, which the instance's saved changes don't
-      name.
-    - So the reopened design shows them as the component has them, and nothing says so. Upstream loses the detach
-      itself instead, and keeps the changes. A type change and "Create component" keep them.
-    - **The person's step:** before detaching a layer inside a component, note which instances changed something
-      inside it, and set those changes again after reopening the design.
-    - Keeping them waits for a later change to the detach: its layers keeping the keys those changes name.
   - **Upstream's sync resets the inner sizes of the instances already read.** Whenever a layer inside a component
     changes, a plain rename included, the sync puts the component's sizes over the sizes Figma derived for those
     instances' inner layers, in the window and in the save: a progress bar's fill takes the component's width. A
@@ -177,20 +174,21 @@ secrets.
   - **A copy built before the change keeps the type it was built with in that window,** and so does a copy two levels
     down, inside an instance another component holds, even on a page loaded after the change. After an undo of a
     detach, a copy built while the layer was detached keeps the frame's type the same way. The saved file holds each
-    such copy as the component has it, but for the loss above. A person reopens the design to see it as saved.
+    such copy as the component has it. A person reopens the design to see it as saved.
   - **After an undo of a detach, the instance stays out of the instance index.** This one is upstream's: the index
     checks the type before the undo writes INSTANCE back (`packages/scene-graph/src/graph.ts`). Later edits to its
     component don't reach it in that window, and the save skips it when it writes the component's instances. A person
     reopens the design after undoing a detach, before editing that component.
 - **The setting:** none; this is a fix. If upstream fixes it, take theirs and drop this change.
 - **The files:**
-  - `packages/scene-graph/src/instances/index.ts` (`detachInstance`);
+  - `packages/scene-graph/src/instances/index.ts` (`detachInstance`, `heldInstanceLinks`);
   - `packages/fig/src/instance-overrides/source-children.ts` (`reconcileOccurrenceStructure`, `changedTypeSince`);
   - `packages/fig/src/instance-overrides/occurrence/path.ts` (`reachesLeftOutCopy`);
   - `packages/fig/src/instance-overrides/materialize-instance.ts` (`claimTarget`);
   - `packages/fig/src/document/materialize.ts` (the load's record of the copies it left out);
   - `packages/fig/src/node-change/convert.ts` (`resolveNodeType`, now exported);
   - `packages/core/src/io/formats/fig/export/patch/index.ts` (`planRecords`, `addUnrecordedDescendants`);
+  - `packages/fig/src/node-change/export/node.ts` (`copiedLayerKey`, `keptLink`);
   - `tests/integration/collab/cloud/component-detach.test.ts` and its helper,
     `tests/helpers/collab/component-tabs.ts`;
   - `packages/fig/tests/instance-overrides/materialize.test.ts`.

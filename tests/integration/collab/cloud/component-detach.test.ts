@@ -3,10 +3,10 @@
  * detach, a group turned into a frame or a frame turned into a group; and a layer deleted inside a
  * component. Later pages with an instance of that component show the layer as the component now
  * has it, every save goes through, and the saved file reopens with the layer and all it holds, in
- * one window and in two. Such an instance loses what it changed on that layer, and inside it unless
- * the change was a detach, and keeps what it changed on the component's other layers. After a
- * detach, every instance keeps what it changed inside the detached layer across a reopen: one read
- * before it, one read after it, and one drawn in the same session.
+ * one window and in two. Such an instance loses what it changed on that layer or inside it, and
+ * keeps what it changed on the component's other layers. An instance read before a detach keeps
+ * what it changed on the detached layer and inside it, in the window and across a reopen; one drawn
+ * in the same session keeps what it changed inside it.
  */
 import 'fake-indexeddb/auto'
 import { afterEach, describe, expect, test } from 'bun:test'
@@ -466,21 +466,15 @@ function detachPipInOf(tab: EditorStore): void {
   tab.detachInstance()
 }
 
-/**
- * A Tag after PipIn's detach: PipIn as Badge's frame, with every change inside it and on the other
- * two layers, and without the hide on PipIn, which a layer whose type changed loses.
- */
-const detachedTag = tagWith(
-  { ...badgeLayer('PipIn', 'FRAME', true), visible: true },
-  badgeLayer('Cap', 'GROUP', true),
-  badgeLayer('Box', 'FRAME', true)
-)
-
 describe('a change inside a component that an instance on a page not yet shown overrides, on the changed layer and inside it', () => {
   const detachPipIn = {
     steps: 'detaches PipIn',
     change: detachPipInOf,
-    tag: detachedTag
+    tag: tagWith(
+      badgeLayer('PipIn', 'FRAME', false),
+      badgeLayer('Cap', 'GROUP', true),
+      badgeLayer('Box', 'FRAME', true)
+    )
   }
   const changes = [
     detachPipIn,
@@ -593,6 +587,91 @@ describe('a detach inside a component that an instance on a page already shown o
   }
 })
 
+/**
+ * Badge and its Tags (`drawBadge`), with Rack, a component on Parts holding BadgeIn, an instance of
+ * Badge; and on Screens Slot, an instance of Rack, which hides each of Badge's three layers inside
+ * BadgeIn, fills the shape inside each red and changes its text.
+ */
+async function rackedFile(): Promise<Uint8Array> {
+  await initCodec()
+  const graph = coverGraph()
+  drawBadge(graph)
+  const rack = graph.createNode('COMPONENT', pageNamed(graph, 'Parts'), {
+    name: 'Rack',
+    width: 150,
+    height: 20,
+    y: 200
+  })
+  graph.createInstance(topLayer(graph, 'Parts', 'Badge').id, rack.id, { name: 'BadgeIn' })
+  const slot = graph.createInstance(rack.id, pageNamed(graph, 'Screens'), { name: 'Slot', y: 100 })
+  if (!slot) throw new Error('Expected the Slot')
+  const author = createEditorStore(graph)
+  overrideTags(author, new Map([['Screens', childNamed(graph, slot.id, 'BadgeIn')]]), ['Screens'])
+  await settle()
+  const bytes = await exportFigFile(graph)
+  author.preparationController.dispose()
+  return bytes
+}
+
+/** The Slot, its BadgeIn of `type` with every change the Slot made inside it. */
+const changedSlot = (type: string): Look => ({
+  name: 'Slot',
+  type: 'INSTANCE',
+  visible: true,
+  children: [
+    {
+      name: 'BadgeIn',
+      type,
+      visible: true,
+      children: [
+        badgeLayer('PipIn', 'INSTANCE', true),
+        badgeLayer('Cap', 'GROUP', true),
+        badgeLayer('Box', 'FRAME', true)
+      ]
+    }
+  ]
+})
+
+/** Detaches, with the editor's own action, BadgeIn in the copy of Rack on top. */
+function detachBadgeInOf(tab: EditorStore): void {
+  tab.select([inComponent(tab, 'Rack', 'BadgeIn').id])
+  tab.detachInstance()
+}
+
+/**
+ * BadgeIn's detach leaves PipIn an instance of Pip that Rack holds itself. The Slot read before the
+ * detach keeps across the save what it changed on PipIn and inside it, as on the other two layers.
+ */
+describe('a detach inside a component of an instance holding an instance, which an instance on a page already shown overrides inside both', () => {
+  for (const reader of READERS) {
+    test(`one window reading on ${reader}: shows Screens, detaches BadgeIn in Rack, and saves`, async () => {
+      const tab = await tabReading(reader, await rackedFile())
+      await showPage(tab, 'Screens')
+      await settle()
+      detachBadgeInOf(tab)
+      await settle()
+
+      const saved = await save(tab)
+
+      expect(lookOn(tab.graph, 'Screens', 'Slot')).toEqual(changedSlot('INSTANCE'))
+      expect(lookOn(saved, 'Screens', 'Slot')).toEqual(changedSlot('FRAME'))
+    })
+
+    test(`two windows, Bob reading on ${reader}: Bob shows Screens, Ann joins, shows Parts and detaches BadgeIn in Rack, and each saves`, async () => {
+      const { bob, ann } = await bobAndAnn(reader, await rackedFile())
+      detachBadgeInOf(ann)
+      await settle()
+
+      const bobs = await save(bob)
+      const anns = await save(ann)
+
+      expect(lookOn(bob.graph, 'Screens', 'Slot')).toEqual(changedSlot('INSTANCE'))
+      expect(lookOn(bobs, 'Screens', 'Slot')).toEqual(changedSlot('FRAME'))
+      expect(lookOn(anns, 'Screens', 'Slot')).toEqual(changedSlot('FRAME'))
+    })
+  }
+})
+
 /** A stored file holding only Cover. */
 async function coverFile(): Promise<Uint8Array> {
   await initCodec()
@@ -600,9 +679,19 @@ async function coverFile(): Promise<Uint8Array> {
 }
 
 /**
+ * A Tag drawn in the same session after PipIn's detach: PipIn as Badge's frame, with every change
+ * inside it and on the other two layers, and without the hide on PipIn, which a layer whose type
+ * changed loses.
+ */
+const detachedTag = tagWith(
+  { ...badgeLayer('PipIn', 'FRAME', true), visible: true },
+  badgeLayer('Cap', 'GROUP', true),
+  badgeLayer('Box', 'FRAME', true)
+)
+
+/**
  * Pip, Badge and the Tags drawn in the tab, so no layer of them has a key in a file yet when PipIn
- * is detached. The save keeps the Tag's changes inside PipIn and loses the hide on it, as for a Tag
- * read after the detach.
+ * is detached. The window syncs such a Tag, so the save keeps its changes inside PipIn.
  */
 describe('a detach inside a component drawn in the same session, which an instance drawn with it overrides inside the detached layer', () => {
   for (const reader of READERS) {
