@@ -96,9 +96,6 @@ const COPIED: { what: string; layer: (tab: EditorStore) => SceneNode; shows: Loo
   }
 ]
 
-/** What a layer shows: its look but for its own type, which a paste of a component may change. */
-const shown = ({ type: _type, ...seen }: Look) => seen
-
 /** The look of what a paste on Screens, with nothing selected, makes. */
 async function pastedOnScreens(tab: EditorStore, paste: () => Promise<void>): Promise<Look> {
   await showPage(tab, 'Screens')
@@ -127,12 +124,8 @@ describe('Copy and Paste after a detach inside a component of an instance that h
         const { html, snapshot } = await tab.prepareCopy()
         const windowsCopy = expectDefined(snapshot, "the window's copy")
 
-        expect(shown(await pastedOnScreens(tab, () => tab.pasteSnapshot(windowsCopy)))).toEqual(
-          shown(shows)
-        )
-        expect(shown(await pastedOnScreens(tab, () => tab.pasteFromHTML(html)))).toEqual(
-          shown(shows)
-        )
+        expect(await pastedOnScreens(tab, () => tab.pasteSnapshot(windowsCopy))).toEqual(shows)
+        expect(await pastedOnScreens(tab, () => tab.pasteFromHTML(html))).toEqual(shows)
       })
     }
   }

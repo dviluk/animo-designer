@@ -133,7 +133,8 @@ secrets.
   - **An instance the detached layer held takes the detached instance's record of which layer each of its layers
     copies** (`adoptNestedOverrides`, `packages/scene-graph/src/instances/index.ts`). That record names layers of the
     detached instance's component, which a copy of the held instance doesn't bring, so Copy of it, of the detached
-    layer or of anything holding them fails with `Missing instance geometry address`.
+    layer or of anything holding them fails with `Missing instance geometry address`, and so does a save once that
+    component is deleted.
 - **Why we change it:** a detach, a type change, a move or a delete inside a component is an ordinary edit. After one, a window
   could neither show those pages nor save, and a detach on a page was quietly lost.
 - **What it does:**
@@ -188,6 +189,11 @@ secrets.
     out of it.** The save writes that change's path as before the detach, and the reopened design skips a path that
     finds no layer, with no notice. The window may show the change until a reopen. A deleted layer takes its changes
     with it, as anywhere, and a moved one shows as the component has it.
+  - **Copy after a detach still fails for an instance drawn since the design was opened.** The instance the detached
+    layer held, and each layer inside it, still copies a layer of the detached instance's component, which a copy
+    doesn't bring. So Copy of it, of the detached layer or of anything holding them fails with `Missing instance
+    geometry address`, and so does a save once that component is deleted. One read from the store copies and saves. A
+    person reopens the design after such a detach, before copying or before deleting that component.
   - **"Create component" on a layer detached inside a component loses, at the save, what an instance read before the
     detach changed inside that layer.** The window still shows it, and the hide on the layer itself stays. The code
     before this fix loses it too. A person reopens the design after making such a layer a component, and sets those
