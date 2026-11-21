@@ -707,6 +707,22 @@ function propertyDefinitionRecord(
   return record
 }
 
+/**
+ * The key of the component layer that a layer written as its own record still copies, which a
+ * detached instance's layers keep until a reopen. Instances of the component holding it saved their
+ * changes inside it under paths through that key, so the record answers to it. An instance's
+ * `componentId` names its main component instead, and an instance's copies are never records.
+ */
+function copiedLayerKey(
+  context: SceneNodeToKiwiContext,
+  node: SceneNode,
+  localIdCounter: { value: number }
+): GUID | null {
+  if (node.type === 'INSTANCE' || !node.componentId || !context.graph.getNode(node.componentId))
+    return null
+  return instanceGuidResolver(context, localIdCounter)(node.componentId) ?? null
+}
+
 function applyComponentMetadata(
   context: SceneNodeToKiwiContext,
   node: SceneNode,
@@ -716,7 +732,9 @@ function applyComponentMetadata(
   if (node.componentKey) nc.componentKey = node.componentKey
   if (node.sourceLibraryKey) nc.sourceLibraryKey = node.sourceLibraryKey
   const publishId = node.publishId ? parseGuidOrNull(node.publishId) : null
-  const overrideKey = node.overrideKey ? parseGuidOrNull(node.overrideKey) : null
+  const overrideKey = node.overrideKey
+    ? parseGuidOrNull(node.overrideKey)
+    : copiedLayerKey(context, node, localIdCounter)
   if (publishId) nc.publishID = publishId
   if (overrideKey) nc.overrideKey = overrideKey
   if (node.sharedSymbolVersion) nc.sharedSymbolVersion = node.sharedSymbolVersion
