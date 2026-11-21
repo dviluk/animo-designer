@@ -108,7 +108,7 @@ secrets.
   On a merge conflict in the reference, resolve the source and run `bun run generate:authoring-reference`; never
   hand-merge the copies.
 
-## The sixth change: a detach, a type change or a delete inside a component no longer breaks later pages, and a detach's save keeps the layer
+## The sixth change: a detach, a type change, a move or a delete inside a component no longer breaks later pages, and a detach's save keeps the layer
 
 - **What upstream does:**
   - **Detach turns the layer into a frame in place without telling the graph** (`detachInstance`,
@@ -125,9 +125,11 @@ secrets.
     deleted layer or inside it,** such as a hidden icon. The page load leaves the deleted layer's copy out, then still
     looks for it to record the instance's change, and fails with `Expected one instance-path target … found 0`
     (`recordPropertyClaims`, `packages/fig/src/instance-overrides/materialize-instance.ts`).
+  - **A layer moved to another parent inside a component breaks them the same way,** when an instance on a page not
+    yet shown changed something on it: the load looks for the layer where the file's copy had it.
   - **A detach on a page is dropped from the save,** with any change made to that layer after it, since the save sees
     no change. The reopened design holds the instance as it was.
-- **Why we change it:** a detach, a type change or a delete inside a component is an ordinary edit. After one, a window
+- **Why we change it:** a detach, a type change, a move or a delete inside a component is an ordinary edit. After one, a window
   could neither show those pages nor save, and a detach on a page was quietly lost.
 - **What it does:**
   - **Detach writes through `graph.updateNode`,** as its undo already did. Observers see the edit, the room gets it at
@@ -135,7 +137,8 @@ secrets.
   - **A page load into an edited drawing leaves the stale copy out of a new instance.** That is the copy of a layer
     whose type in the component is no longer the type the file gives the copy, whatever changed it: a detach, "Convert
     to frame" or "to group", or "Create component". It is left out as the copy of a deleted layer is, and the
-    instance's sync after its build copies the layer in as it is now.
+    instance's sync after its build copies the layer in as it is now. The copy of a layer moved to another parent is
+    left out where it was, the same way, and copied in where the layer is now.
   - **The load then drops what the instance changed on a copy it left out,** the copy itself or anything inside it,
     where it used to fail. Only a copy this load left out is skipped this way: a change whose layer is missing for any
     other reason still fails the load. Each load keeps one record of the copies it left out
@@ -153,6 +156,18 @@ secrets.
     - When: on that page's first load after the change, or on a save.
     - The copy becomes the component's layer as it is now. The page shows, and the save goes through.
     - Keeping the instance's own change waits for a later change to how a page load builds instances.
+  - **After a detach inside a component, an instance read before it loses at the save what it changed inside the
+    detached layer,** in one window as in two. Say the owner colours an icon in instances across a design, then detaches
+    that icon inside its component:
+    - The window still shows each instance's colour.
+    - The save keeps what each instance changed on the layer itself, such as hiding it, and on the component's other
+      layers. But the layers inside the detached one are saved as new layers, which the instance's saved changes don't
+      name.
+    - So the reopened design shows them as the component has them, and nothing says so. Upstream loses the detach
+      itself instead, and keeps the changes. A type change and "Create component" keep them.
+    - **The person's step:** before detaching a layer inside a component, note which instances changed something
+      inside it, and set those changes again after reopening the design.
+    - Keeping them waits for a later change to the detach: its layers keeping the keys those changes name.
   - **Upstream's sync resets the inner sizes of the instances already read.** Whenever a layer inside a component
     changes, a plain rename included, the sync puts the component's sizes over the sizes Figma derived for those
     instances' inner layers, in the window and in the save: a progress bar's fill takes the component's width. A
@@ -160,8 +175,8 @@ secrets.
     those instances' sizes after such a change, and sets again what was reset.
   - **A copy built before the change keeps the type it was built with in that window,** and so does a copy two levels
     down, inside an instance another component holds, even on a page loaded after the change. After an undo of a
-    detach, a copy built while the layer was detached keeps the frame's type the same way. The saved file is right. A
-    person reopens the design to see it right.
+    detach, a copy built while the layer was detached keeps the frame's type the same way. The saved file holds each
+    such copy as the component has it, but for the loss above. A person reopens the design to see it as saved.
   - **After an undo of a detach, the instance stays out of the instance index.** This one is upstream's: the index
     checks the type before the undo writes INSTANCE back (`packages/scene-graph/src/graph.ts`). Later edits to its
     component don't reach it in that window, and the save skips it when it writes the component's instances. A person
@@ -186,8 +201,9 @@ secrets.
   session keeps its place until that idle time ends. Ten filled up in ordinary use, and the next agent was refused.
 - **What it does:** the limit is 32. The idle time stays at 15 minutes.
 - **The setting:** none; the limit is a constant.
-- **The files:** `packages/mcp/src/server/sessions.ts` (`MAX_MCP_SESSIONS`), its test
-  `packages/mcp/tests/server/security.test.ts`, and `packages/mcp/README.md`.
+- **The files:** `packages/mcp/src/server/sessions.ts` (`MAX_MCP_SESSIONS`), the three tests that pin the limit,
+  `packages/mcp/tests/server/security.test.ts`, `sessions.test.ts` and `transport.test.ts`, and
+  `packages/mcp/README.md`.
 
 ## What still reaches outside
 

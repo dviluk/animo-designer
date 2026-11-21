@@ -185,3 +185,46 @@ test('an override inside a copy a page load left out is not kept, and the others
 test('an override whose layer is missing for any other reason still throws', () => {
   expect(frameLeftOut(true)).toThrow('Expected one instance-path target for 5:4; found 0')
 })
+
+/**
+ * An instance of a component that holds a nested instance and a rectangle, whose rectangle's copy is
+ * missing. A copy matching that rectangle is recorded as left out, but under the nested instance,
+ * whose copies are its own.
+ */
+function leftOutUnderNestedInstance() {
+  const changes = [
+    { guid: guid(6, 5), type: 'SYMBOL' },
+    { guid: guid(7, 5), type: 'RECTANGLE', parentIndex: { guid: guid(6, 5), position: '!' } },
+    { guid: guid(1, 5), type: 'SYMBOL' },
+    {
+      guid: guid(8, 5),
+      type: 'INSTANCE',
+      parentIndex: { guid: guid(1, 5), position: '!' },
+      symbolData: { symbolID: guid(6, 5), symbolOverrides: [] }
+    },
+    { guid: guid(4, 5), type: 'RECTANGLE', parentIndex: { guid: guid(1, 5), position: '"' } },
+    {
+      guid: guid(5, 5),
+      type: 'INSTANCE',
+      symbolData: {
+        symbolID: guid(1, 5),
+        symbolOverrides: [{ guidPath: { guids: [guid(4, 5)] }, opacity: 0.5 }]
+      }
+    }
+  ] as NodeChange[]
+  const occurrence = interpretInstance(changes, '5:5')
+  const [nested, outer] = occurrence.children
+  occurrence.children = [expectDefined(nested)]
+  const graph = new SceneGraph()
+  const page = graph.getPages()[0]
+  const components = new Map([
+    ['5:1', graph.createNode('COMPONENT', page.id).id],
+    ['5:6', graph.createNode('COMPONENT', page.id).id]
+  ])
+  const leftOutCopies = new Map([[expectDefined(nested), [expectDefined(outer)]]])
+  return () => materializeInstance(graph, page.id, occurrence, components, { leftOutCopies })
+}
+
+test("a copy left out under a nested instance doesn't keep the owner's missing layer from throwing", () => {
+  expect(leftOutUnderNestedInstance()).toThrow('Expected one instance-path target for 5:4; found 0')
+})

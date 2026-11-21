@@ -4,7 +4,9 @@
  * component. Later pages with an instance of that component show the layer as the component now
  * has it, every save goes through, and the saved file reopens with the layer and all it holds, in
  * one window and in two. Such an instance loses what it changed on that layer or inside it, and
- * keeps what it changed on the component's other layers.
+ * keeps what it changed on the component's other layers. An instance read before a detach keeps
+ * what it changed inside the detached layer in the window, and loses it in the save: a written
+ * limit.
  */
 import 'fake-indexeddb/auto'
 import { afterEach, describe, expect, test } from 'bun:test'
@@ -385,12 +387,13 @@ const BADGE_LAYERS = {
 type BadgeLayer = keyof typeof BADGE_LAYERS
 
 /**
- * Cover; Screens with a Tag; Parts with Pip and Badge, which holds an instance of Pip, a group and
- * a frame, each with a blue shape and a text inside; and More with a Tag that hides each of the
- * three, fills the shape inside it red and changes the text inside it. Showing Screens builds
- * Badge and Pip, and nothing reads More until a tab shows it or a save reads it.
+ * Cover; Parts with Pip and Badge, which holds an instance of Pip, a group and a frame, each with a
+ * blue shape and a text inside; and Screens and More, each with a Tag. The Tag on each page that
+ * `overriding` names hides each of the three, fills the shape inside it red and changes the text
+ * inside it. Showing Screens builds Badge and Pip, and nothing reads More until a tab shows it or
+ * a save reads it.
  */
-async function overriddenFile(): Promise<Uint8Array> {
+async function overriddenFile(overriding: readonly string[] = ['More']): Promise<Uint8Array> {
   await initCodec()
   const graph = new SceneGraph()
   const [cover] = graph.getPages()
@@ -415,16 +418,25 @@ async function overriddenFile(): Promise<Uint8Array> {
   const box = graph.createNode('FRAME', badge.id, { name: 'Box', x: 100, width: 40, height: 20 })
   graph.createNode('RECTANGLE', box.id, { name: 'Mark', width: 8, height: 8, fills: [BLUE] })
   graph.createNode('TEXT', box.id, { name: 'Word', x: 10, width: 30, height: 12, text: 'Word' })
-  graph.createInstance(badge.id, screens.id, { name: 'Tag' })
-  const tag = graph.createInstance(badge.id, more.id, { name: 'Tag' })
-  if (!tag) throw new Error('Expected the Tag on More')
+  const tagOn = new Map([
+    ['Screens', graph.createInstance(badge.id, screens.id, { name: 'Tag' })],
+    ['More', graph.createInstance(badge.id, more.id, { name: 'Tag' })]
+  ])
   // The editor's own edits, so each one is an override the Tag holds.
   const author = createEditorStore(graph)
-  for (const [name, { shape, text }] of Object.entries(BADGE_LAYERS)) {
-    const layer = childNamed(graph, tag.id, name)
-    author.updateNodeWithUndo(childNamed(graph, layer.id, shape[0]).id, { fills: [RED] }, 'Fill')
-    author.updateNodeWithUndo(childNamed(graph, layer.id, text[0]).id, { text: 'Changed' }, 'Text')
-    author.updateNodeWithUndo(layer.id, { visible: false }, 'Hide')
+  for (const page of overriding) {
+    const tag = tagOn.get(page)
+    if (!tag) throw new Error(`Expected the Tag on ${page}`)
+    for (const [name, { shape, text }] of Object.entries(BADGE_LAYERS)) {
+      const layer = childNamed(graph, tag.id, name)
+      author.updateNodeWithUndo(childNamed(graph, layer.id, shape[0]).id, { fills: [RED] }, 'Fill')
+      author.updateNodeWithUndo(
+        childNamed(graph, layer.id, text[0]).id,
+        { text: 'Changed' },
+        'Text'
+      )
+      author.updateNodeWithUndo(layer.id, { visible: false }, 'Hide')
+    }
   }
   await settle()
   const bytes = await exportFigFile(graph)
@@ -577,6 +589,73 @@ describe('a change inside a component that an instance on a page not yet shown o
       const saved = await save(tab)
 
       expect(lookOn(saved, 'More', 'Tag')).toEqual(detachPipIn.tag)
+    })
+  }
+})
+
+/** Detaches, with the editor's own action, PipIn in the copy of Badge on top. */
+function detachPipInOf(tab: EditorStore): void {
+  tab.select([inComponent(tab, 'Badge', 'PipIn').id])
+  tab.detachInstance()
+}
+
+/**
+ * The window keeps a Tag read before the detach as it was, PipIn still an instance with every
+ * change. The save keeps the hide on PipIn and every change to the other two layers, and loses the
+ * changes inside PipIn: its layers are saved as new ones, which the Tag's paths don't name.
+ */
+const shownTag = tagWith(
+  badgeLayer('PipIn', 'INSTANCE', true),
+  badgeLayer('Cap', 'GROUP', true),
+  badgeLayer('Box', 'FRAME', true)
+)
+const savedShownTag = tagWith(
+  { ...badgeLayer('PipIn', 'FRAME', false), visible: false },
+  badgeLayer('Cap', 'GROUP', true),
+  badgeLayer('Box', 'FRAME', true)
+)
+
+describe('a detach inside a component that an instance on a page already shown overrides inside the detached layer, a written limit', () => {
+  for (const reader of READERS) {
+    test(`one window reading on ${reader}: shows Screens, detaches PipIn in Badge, and saves`, async () => {
+      const tab = await tabReading(reader, await overriddenFile(['Screens']))
+      await showPage(tab, 'Screens')
+      await settle()
+      detachPipInOf(tab)
+      await settle()
+
+      const saved = await save(tab)
+
+      expect(lookOn(tab.graph, 'Screens', 'Tag')).toEqual(shownTag)
+      expect(lookOn(saved, 'Screens', 'Tag')).toEqual(savedShownTag)
+    })
+
+    test(`two windows, Bob reading on ${reader}: Bob shows Screens, Ann joins, shows Parts and detaches PipIn in Badge, and each saves`, async () => {
+      const relay = await startRelay()
+      const documentId = crypto.randomUUID()
+      const file = await overriddenFile(['Screens'])
+      const bob = await tabReading(reader, file)
+      const bobRoom = openRoom(relay, bob, { documentId, name: 'Bob' })
+      await until(() => bobRoom.session.roomHasDocument())
+      await showPage(bob, 'Screens')
+      await settle()
+      const shown = topLayerCount(bob.graph, 'Screens')
+      const ann = await threadTab(file)
+      const annRoom = openRoom(relay, ann, { documentId, name: 'Ann' })
+      await until(() => annRoom.session.hasDocument.value && annRoom.session.peers.value.length > 0)
+      await until(() => topLayerCount(ann.graph, 'Screens') >= shown)
+      await settle()
+      await showPage(ann, 'Parts')
+      await settle()
+      detachPipInOf(ann)
+      await settle()
+
+      const bobs = await save(bob)
+      const anns = await save(ann)
+
+      expect(lookOn(bob.graph, 'Screens', 'Tag')).toEqual(shownTag)
+      expect(lookOn(bobs, 'Screens', 'Tag')).toEqual(savedShownTag)
+      expect(lookOn(anns, 'Screens', 'Tag')).toEqual(savedShownTag)
     })
   }
 })
