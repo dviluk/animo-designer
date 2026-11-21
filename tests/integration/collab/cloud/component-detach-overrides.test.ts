@@ -3,24 +3,31 @@
  * changes in place or it is deleted. An instance on a page not yet shown loses those changes, and
  * keeps what it changed on the component's other layers. An instance read before a detach keeps
  * what it changed on the detached layer and inside it, in the window and across a reopen, in one
- * window and in two; one drawn in the same session keeps what it changed inside it.
+ * window and in two, whatever is copied into the detached layer after it; it loses what it changed
+ * on a layer then deleted or moved out of it. One drawn in the same session keeps what it changed
+ * inside it.
  */
 import 'fake-indexeddb/auto'
 import { afterEach, describe, expect, test } from 'bun:test'
 
 import { exportFigFile } from '@open-pencil/core/io/formats/fig'
 import { initCodec } from '@open-pencil/kiwi/fig/codec'
-import { type Fill, SceneGraph, type SceneNode } from '@open-pencil/scene-graph'
+import { SceneGraph, type SceneNode } from '@open-pencil/scene-graph'
+import { getInstanceOverride } from '@open-pencil/scene-graph/instances/overrides'
 
 import { createEditorStore, type EditorStore } from '@/app/editor/session'
 
 import { runCleanups } from '#tests/helpers/collab/cloud'
 import {
+  BLUE,
   bobAndAnn,
   childNamed,
   inComponent,
+  type Look,
+  lookOn,
   pageNamed,
   READERS,
+  RED,
   save,
   settle,
   showPage,
@@ -29,9 +36,6 @@ import {
 } from '#tests/helpers/collab/component-tabs'
 
 afterEach(runCleanups)
-
-const RED: Fill = { type: 'SOLID', color: { r: 1, g: 0, b: 0, a: 1 }, opacity: 1, visible: true }
-const BLUE: Fill = { type: 'SOLID', color: { r: 0, g: 0, b: 1, a: 1 }, opacity: 1, visible: true }
 
 /** Badge's three layers that a Tag overrides, each with the shape and the text inside it. */
 const BADGE_LAYERS = {
@@ -127,42 +131,6 @@ async function overriddenFile(overriding: readonly string[] = ['More']): Promise
   author.preparationController.dispose()
   return bytes
 }
-
-/** A layer and all it holds: each one's name, type and visibility, a shape's fill, a text's words. */
-interface Look {
-  name: string
-  type: string
-  visible: boolean
-  fill?: string
-  text?: string
-  children: Look[]
-}
-
-const COLOR_NAMES = new Map([
-  ['1,0,0', 'red'],
-  ['0,0,1', 'blue']
-])
-
-function colorName({ color }: Fill): string {
-  const rgb = `${color.r},${color.g},${color.b}`
-  return COLOR_NAMES.get(rgb) ?? rgb
-}
-
-function look(graph: SceneGraph, node: SceneNode): Look {
-  const seen: Look = {
-    name: node.name,
-    type: node.type,
-    visible: node.visible,
-    children: graph.getChildren(node.id).map((child) => look(graph, child))
-  }
-  const [paint] = node.fills
-  if (paint && (node.type === 'RECTANGLE' || node.type === 'ELLIPSE')) seen.fill = colorName(paint)
-  if (node.type === 'TEXT') seen.text = node.text
-  return seen
-}
-
-const lookOn = (graph: SceneGraph, page: string, name: string): Look =>
-  look(graph, topLayer(graph, page, name))
 
 /** One of Badge's layers in the Tag on More, with the Tag's overrides or as Badge has it. */
 function badgeLayer(name: BadgeLayer, type: string, overridden: boolean): Look {
@@ -283,7 +251,8 @@ describe('a change inside a component that an instance on a page not yet shown o
 /**
  * The window keeps a Tag read before the detach as it was, PipIn still an instance with every
  * change. The save keeps the hide on PipIn, every change inside it and every change to the other
- * two layers: its paths name PipIn's own layers, which copy the layers of Pip the Tag changed.
+ * two layers: its paths name PipIn's own layers, which the detach linked to the layers of Pip the
+ * Tag changed.
  */
 const shownTag = tagWith(
   badgeLayer('PipIn', 'INSTANCE', true),
@@ -326,6 +295,105 @@ describe('a detach inside a component that an instance on a page already shown o
   }
 })
 
+const coreIn = (tab: EditorStore): SceneNode =>
+  childNamed(tab.graph, inComponent(tab, 'Badge', 'PipIn').id, 'Core')
+
+type InPipIn = 'Core' | 'CoreCopy' | 'Label'
+
+/**
+ * A copy of Core put into the detached PipIn with the editor's own actions, each with the order of
+ * PipIn's layers it leaves: Duplicate stacks the copy directly above its original.
+ */
+const copyingCore: {
+  steps: string
+  copy: (tab: EditorStore) => void | Promise<void>
+  order: InPipIn[]
+}[] = [
+  {
+    steps: 'duplicates its Core',
+    copy: (tab: EditorStore) => {
+      tab.select([coreIn(tab).id])
+      tab.duplicateSelected()
+    },
+    order: ['Core', 'CoreCopy', 'Label']
+  },
+  {
+    steps: 'duplicates its Core and sends the copy to the back',
+    copy: (tab: EditorStore) => {
+      tab.select([coreIn(tab).id])
+      tab.duplicateSelected()
+      tab.sendToBack()
+    },
+    order: ['CoreCopy', 'Core', 'Label']
+  },
+  {
+    steps: 'copies its Core and pastes it into PipIn',
+    copy: async (tab: EditorStore) => {
+      tab.select([coreIn(tab).id])
+      const { html } = await tab.prepareCopy()
+      tab.select([inComponent(tab, 'Badge', 'PipIn').id])
+      await tab.pasteFromHTML(html)
+    },
+    order: ['Core', 'Label', 'CoreCopy']
+  }
+]
+
+/** PipIn's layers in the saved Tag: the Tag's changes on Core and Label, the copy as Pip has Core. */
+const SAVED_IN_PIP_IN: Record<InPipIn, Look> = {
+  Core: { name: 'Core', type: 'ELLIPSE', visible: true, fill: 'red', children: [] },
+  CoreCopy: { name: 'CoreCopy', type: 'ELLIPSE', visible: true, fill: 'blue', children: [] },
+  Label: { name: 'Label', type: 'TEXT', visible: true, text: 'Changed', children: [] }
+}
+
+/**
+ * The detach keeps its links on the frame PipIn becomes, keyed by the layers it freed, so a copy of
+ * Core made inside it later has none, though a duplicate shares Core's `componentId`. The save
+ * then keeps the Tag's change on Core, wherever the copy sits.
+ */
+describe('a copy put into the detached layer after a detach inside a component that an instance on a page already shown overrides inside it', () => {
+  for (const reader of READERS) {
+    for (const { steps, copy, order } of copyingCore) {
+      test(`one window reading on ${reader}: shows Screens, detaches PipIn in Badge, ${steps}, and saves`, async () => {
+        const tab = await tabReading(reader, await overriddenFile(['Screens']))
+        await showPage(tab, 'Screens')
+        await settle()
+        detachPipInOf(tab)
+        await settle()
+        const freed = tab.graph.getChildren(inComponent(tab, 'Badge', 'PipIn').id).map((l) => l.id)
+        const core = coreIn(tab)
+        await copy(tab)
+        await settle()
+        const pipIn = inComponent(tab, 'Badge', 'PipIn')
+        const made = tab.graph
+          .getChildren(pipIn.id)
+          .find((layer) => layer.name === 'Core' && layer.id !== core.id)
+        if (!made) throw new Error('Expected a copy of Core in PipIn')
+        tab.updateNodeWithUndo(made.id, { name: 'CoreCopy' }, 'Rename')
+        await settle()
+
+        const saved = await save(tab)
+
+        const link = (id: string) =>
+          getInstanceOverride(pipIn.instanceOverrides, pipIn.id, id, 'sourceComponentId')
+        expect([...pipIn.instanceOverrides.descendants.keys()].sort()).toEqual(freed.sort())
+        expect(link(core.id)).toBeString()
+        expect(link(made.id)).toBeUndefined()
+        expect(tab.graph.getChildren(pipIn.id).map((layer) => layer.name)).toEqual(order)
+        expect(lookOn(saved, 'Screens', 'Tag')).toEqual(
+          tagWith(
+            {
+              ...badgeLayer('PipIn', 'FRAME', true),
+              children: order.map((n) => SAVED_IN_PIP_IN[n])
+            },
+            badgeLayer('Cap', 'GROUP', true),
+            badgeLayer('Box', 'FRAME', true)
+          )
+        )
+      })
+    }
+  }
+})
+
 /**
  * Badge and its Tags (`drawBadge`), with Rack, a component on Parts holding BadgeIn, an instance of
  * Badge; and on Screens Slot, an instance of Rack, which hides each of Badge's three layers inside
@@ -352,24 +420,32 @@ async function rackedFile(): Promise<Uint8Array> {
   return bytes
 }
 
-/** The Slot, its BadgeIn of `type` with every change the Slot made inside it. */
-const changedSlot = (type: string): Look => ({
+/** The Slot holding `layers`. */
+const slotWith = (...layers: Look[]): Look => ({
   name: 'Slot',
   type: 'INSTANCE',
   visible: true,
-  children: [
-    {
-      name: 'BadgeIn',
-      type,
-      visible: true,
-      children: [
-        badgeLayer('PipIn', 'INSTANCE', true),
-        badgeLayer('Cap', 'GROUP', true),
-        badgeLayer('Box', 'FRAME', true)
-      ]
-    }
-  ]
+  children: layers
 })
+
+/** BadgeIn of `type`, holding `layers`. */
+const badgeIn = (type: string, ...layers: Look[]): Look => ({
+  name: 'BadgeIn',
+  type,
+  visible: true,
+  children: layers
+})
+
+/** The Slot, its BadgeIn of `type` with every change the Slot made inside it. */
+const changedSlot = (type: string): Look =>
+  slotWith(
+    badgeIn(
+      type,
+      badgeLayer('PipIn', 'INSTANCE', true),
+      badgeLayer('Cap', 'GROUP', true),
+      badgeLayer('Box', 'FRAME', true)
+    )
+  )
 
 /** Detaches, with the editor's own action, BadgeIn in the copy of Rack on top. */
 function detachBadgeInOf(tab: EditorStore): void {
@@ -379,7 +455,8 @@ function detachBadgeInOf(tab: EditorStore): void {
 
 /**
  * BadgeIn's detach leaves PipIn an instance of Pip that Rack holds itself. The Slot read before the
- * detach keeps across the save what it changed on PipIn and inside it, as on the other two layers.
+ * detach keeps across the save what it changed on PipIn and inside it, as on the other two layers,
+ * after an undo and a redo of the detach too.
  */
 describe('a detach inside a component of an instance holding an instance, which an instance on a page already shown overrides inside both', () => {
   for (const reader of READERS) {
@@ -396,6 +473,22 @@ describe('a detach inside a component of an instance holding an instance, which 
       expect(lookOn(saved, 'Screens', 'Slot')).toEqual(changedSlot('FRAME'))
     })
 
+    test(`one window reading on ${reader}: shows Screens, detaches BadgeIn in Rack, undoes and redoes it, and saves`, async () => {
+      const tab = await tabReading(reader, await rackedFile())
+      await showPage(tab, 'Screens')
+      await settle()
+      detachBadgeInOf(tab)
+      await settle()
+      tab.undoAction()
+      await settle()
+      tab.redoAction()
+      await settle()
+
+      const saved = await save(tab)
+
+      expect(lookOn(saved, 'Screens', 'Slot')).toEqual(changedSlot('FRAME'))
+    })
+
     test(`two windows, Bob reading on ${reader}: Bob shows Screens, Ann joins, shows Parts and detaches BadgeIn in Rack, and each saves`, async () => {
       const { bob, ann } = await bobAndAnn(reader, await rackedFile())
       detachBadgeInOf(ann)
@@ -408,6 +501,54 @@ describe('a detach inside a component of an instance holding an instance, which 
       expect(lookOn(bobs, 'Screens', 'Slot')).toEqual(changedSlot('FRAME'))
       expect(lookOn(anns, 'Screens', 'Slot')).toEqual(changedSlot('FRAME'))
     })
+  }
+})
+
+/** What the detached BadgeIn keeps of the Slot's changes once PipIn is gone from it. */
+const keptInBadgeIn = [badgeLayer('Cap', 'GROUP', true), badgeLayer('Box', 'FRAME', true)]
+
+/**
+ * After BadgeIn's detach, PipIn, the instance it held, deleted from it or moved out of it. The save
+ * finds no layer of BadgeIn for what the Slot changed on PipIn and inside it, so it writes those
+ * paths as before the detach, which the reopened design no longer finds: the changes go, and the
+ * save goes through. A moved PipIn shows as Pip has it.
+ */
+describe('an instance the detached layer held, deleted or moved out after a detach inside a component that an instance on a page already shown overrides inside it', () => {
+  const heldChanges = [
+    {
+      steps: 'deletes PipIn in it',
+      change: (tab: EditorStore) => {
+        tab.select([childNamed(tab.graph, inComponent(tab, 'Rack', 'BadgeIn').id, 'PipIn').id])
+        tab.deleteSelected()
+      },
+      slot: slotWith(badgeIn('FRAME', ...keptInBadgeIn))
+    },
+    {
+      steps: 'moves PipIn out of it into Rack',
+      change: (tab: EditorStore) => {
+        const pipIn = childNamed(tab.graph, inComponent(tab, 'Rack', 'BadgeIn').id, 'PipIn')
+        tab.reparentNodes([pipIn.id], topLayer(tab.graph, 'Parts', 'Rack').id)
+      },
+      slot: slotWith(badgeIn('FRAME', ...keptInBadgeIn), badgeLayer('PipIn', 'INSTANCE', false))
+    }
+  ]
+
+  for (const reader of READERS) {
+    for (const { steps, change, slot } of heldChanges) {
+      test(`one window reading on ${reader}: shows Screens, detaches BadgeIn in Rack, ${steps}, and saves`, async () => {
+        const tab = await tabReading(reader, await rackedFile())
+        await showPage(tab, 'Screens')
+        await settle()
+        detachBadgeInOf(tab)
+        await settle()
+        change(tab)
+        await settle()
+
+        const saved = await save(tab)
+
+        expect(lookOn(saved, 'Screens', 'Slot')).toEqual(slot)
+      })
+    }
   }
 })
 

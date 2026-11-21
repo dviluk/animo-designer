@@ -255,7 +255,7 @@ function syncInstancesOf(
 export function detachInstance(graph: SceneGraph, instanceId: string): void {
   const node = graph.nodes.get(instanceId)
   if (node?.type !== 'INSTANCE') return
-  const links = heldInstanceLinks(graph, node)
+  const links = copiedLayerLinks(graph, node)
   for (const nested of outermostNestedInstances(graph, node))
     adoptNestedOverrides(graph, node, nested)
   // Through the graph, as its undo goes back: observers see the edit, the room gets it, and the
@@ -268,17 +268,18 @@ export function detachInstance(graph: SceneGraph, instanceId: string): void {
 }
 
 /**
- * All a detached instance keeps of its overrides: the layer of its component that each instance it
- * held copies, which only it recorded. Its other layers keep theirs in `componentId`. Until a
- * reopen drops both, a save finds through them the layer that a copy built before the detach
- * names (`instanceExportAddress`, `packages/fig/src/node-change/instance/geometry.ts`).
+ * All a detached instance keeps of its overrides: for each layer it frees, down to each instance it
+ * held, the layer of its component that layer copies, keyed by the freed layer's id. A layer made
+ * inside it later, by a duplicate or a paste, has a new id and so no link, while `componentId`,
+ * which a duplicate copies, can't tell it from its original. Until a reopen drops them, a save
+ * finds through them the layer that a copy built before the detach names (`instanceExportAddress`,
+ * `packages/fig/src/node-change/instance/geometry.ts`).
  */
-function heldInstanceLinks(graph: SceneGraph, instance: SceneNode): InstanceOverrideState {
+function copiedLayerLinks(graph: SceneGraph, instance: SceneNode): InstanceOverrideState {
   const links = createInstanceOverrideState()
   walkInstanceSources(graph, instance, (source, copy) => {
-    if (copy.type !== 'INSTANCE') return true
     setInstanceOverride(links, instance.id, copy.id, 'sourceComponentId', source.id)
-    return false
+    return copy.type !== 'INSTANCE'
   })
   return links
 }

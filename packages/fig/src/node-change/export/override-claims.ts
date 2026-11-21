@@ -16,7 +16,7 @@ import { scaleNodeChanges } from '@open-pencil/scene-graph/scaling'
 import { ownsSlotContent } from '@open-pencil/scene-graph/slots'
 import { paintBindingTarget } from '@open-pencil/scene-graph/variables'
 
-import { instanceExportAddress } from '../instance/geometry'
+import { instanceExportAddress, type StaleCopies } from '../instance/geometry'
 import { mergeVariableConsumptionMaps, overrideVariableBindingEntry } from '../variable/bindings'
 import { mergeVariableModeClaims } from '../variable/maps'
 import { nestedPropertyAssignments } from './assignments/nested'
@@ -267,11 +267,12 @@ export function serializeRuntimePropertyOverrides(
   // A layer with several overridden fields is addressed once; the resolver keeps the GUIDs it makes.
   const targets = new Map<string, { target: SceneNode; path: GUID[] } | undefined>()
   const records = new Map<string, KiwiNodeChange>()
+  const stale: StaleCopies = new Map()
   const findTarget = (targetId: string) => {
     const target = context.graph.getNode(targetId)
     if (!target || (target.id !== instance.id && !isDescendantOf(context, targetId, instance.id)))
       return undefined
-    const path = instanceExportAddress(context.graph, instance, target, resolveGuid)
+    const path = instanceExportAddress(context.graph, instance, target, resolveGuid, stale)
     return path ? { target, path } : undefined
   }
   const resolveTarget = (owner: SceneNode, nodeId: string) => {

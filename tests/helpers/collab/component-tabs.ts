@@ -1,10 +1,10 @@
 /**
  * Tabs for the tests of a change inside a component: a tab reading a stored file through a reader
  * worker, as the app does, or on this thread; two windows sharing a room; the editor's own page
- * switch; and layers looked up by name.
+ * switch; layers looked up by name; and how a layer looks.
  */
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
-import type { SceneGraph, SceneNode } from '@open-pencil/scene-graph'
+import type { Fill, SceneGraph, SceneNode } from '@open-pencil/scene-graph'
 
 import { createEditorStore, type EditorStore } from '@/app/editor/session'
 
@@ -114,3 +114,52 @@ export const inComponent = (tab: EditorStore, component: string, name: string): 
 export async function save(tab: EditorStore): Promise<SceneGraph> {
   return parseFigFile(Uint8Array.from(await exportFigFile(tab.graph)).buffer, { populate: 'all' })
 }
+
+export const RED: Fill = {
+  type: 'SOLID',
+  color: { r: 1, g: 0, b: 0, a: 1 },
+  opacity: 1,
+  visible: true
+}
+export const BLUE: Fill = {
+  type: 'SOLID',
+  color: { r: 0, g: 0, b: 1, a: 1 },
+  opacity: 1,
+  visible: true
+}
+
+/** A layer and all it holds: each one's name, type and visibility, a shape's fill, a text's words. */
+export interface Look {
+  name: string
+  type: string
+  visible: boolean
+  fill?: string
+  text?: string
+  children: Look[]
+}
+
+const COLOR_NAMES = new Map([
+  ['1,0,0', 'red'],
+  ['0,0,1', 'blue']
+])
+
+function colorName({ color }: Fill): string {
+  const rgb = `${color.r},${color.g},${color.b}`
+  return COLOR_NAMES.get(rgb) ?? rgb
+}
+
+export function look(graph: SceneGraph, node: SceneNode): Look {
+  const seen: Look = {
+    name: node.name,
+    type: node.type,
+    visible: node.visible,
+    children: graph.getChildren(node.id).map((child) => look(graph, child))
+  }
+  const [paint] = node.fills
+  if (paint && (node.type === 'RECTANGLE' || node.type === 'ELLIPSE')) seen.fill = colorName(paint)
+  if (node.type === 'TEXT') seen.text = node.text
+  return seen
+}
+
+export const lookOn = (graph: SceneGraph, page: string, name: string): Look =>
+  look(graph, topLayer(graph, page, name))

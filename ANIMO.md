@@ -154,21 +154,32 @@ secrets.
   - **A save writes what an instance read before the detach changed inside the detached layer against that layer's
     own layers.** The window keeps such an instance as it was built, its copy of the layer still an instance, whose
     layers copy the old component's. The save's path to each change used to name those, which the saved file no
-    longer holds. It now names the detached layer's own layer that copies the one named
-    (`instanceExportAddress`, `packages/fig/src/node-change/instance/geometry.ts`). Until a reopen, each of those
-    layers still names the one it copies:
-    - a layer in its `componentId`, as upstream leaves it;
-    - an instance in the link the detached layer kept for it, the one override it keeps (`heldInstanceLinks`,
-      `packages/scene-graph/src/instances/index.ts`). An instance's own `componentId` names what it shows.
+    longer holds. It now names the detached layer's own layer that copies the one named (`instanceExportAddress`,
+    `staleCopyNames`, `packages/fig/src/node-change/instance/geometry.ts`):
+    - **The detach keeps a link for each layer it frees,** down to each instance it held: in the detached layer's own
+      overrides, keyed by the freed layer's id, the layer of the component that layer copies (`copiedLayerLinks`,
+      `packages/scene-graph/src/instances/index.ts`). They are all it keeps of its overrides. A save writes no frame's
+      overrides, so a reopen drops them, and no copy built before the detach is then left to need them.
+    - **The save follows only those links,** never `componentId`, which Duplicate copies onto the new layer. A layer
+      put into the detached layer after the detach, by Duplicate or by a paste, has a new id and so no link: the
+      original keeps the change, wherever the copy sits. Two layers linked to one source give it none.
+    - **The save never sends a path onto a layer that another layer of the same copy names itself,** as a layer the
+      window added to that copy after the detach does: two layers with one address make the save fail (`Ambiguous
+      instance geometry address`). Such a change keeps its old path. A save maps each such copy once.
 
-    The reopened instance keeps those changes, in one window as in two. The save adds no override key, since two
-    layers with one key in a component would make a later page load fail.
+    The reopened instance keeps those changes, in one window as in two. The save adds no override key: two detached
+    copies of one component inside one component would carry the same keys, and a change saved after a reopen then
+    makes that save fail with the same error.
 - **The limits:**
   - **An instance on a page not yet shown keeps nothing it changed on that layer's copy or inside it,** after a
     detach as after the other changes, such as the dot's colour in that one instance.
     - When: on that page's first load after the change, or on a save.
     - The copy becomes the component's layer as it is now. The page shows, and the save goes through.
     - Keeping the instance's own change waits for a later change to how a page load builds instances.
+  - **An instance read before a detach loses what it changed on a layer then deleted from the detached layer or moved
+    out of it.** The save writes that change's path as before the detach, and the reopened design skips a path that
+    finds no layer, with no notice. The window may show the change until a reopen. A deleted layer takes its changes
+    with it, as anywhere, and a moved one shows as the component has it.
   - **Upstream's sync resets the inner sizes of the instances already read.** Whenever a layer inside a component
     changes, a plain rename included, the sync puts the component's sizes over the sizes Figma derived for those
     instances' inner layers, in the window and in the save: a progress bar's fill takes the component's width. A
@@ -184,16 +195,18 @@ secrets.
     reopens the design after undoing a detach, before editing that component.
 - **The setting:** none; this is a fix. If upstream fixes it, take theirs and drop this change.
 - **The files:**
-  - `packages/scene-graph/src/instances/index.ts` (`detachInstance`, `heldInstanceLinks`);
+  - `packages/scene-graph/src/instances/index.ts` (`detachInstance`, `copiedLayerLinks`);
   - `packages/fig/src/instance-overrides/source-children.ts` (`reconcileOccurrenceStructure`, `changedTypeSince`);
   - `packages/fig/src/instance-overrides/occurrence/path.ts` (`reachesLeftOutCopy`);
   - `packages/fig/src/instance-overrides/materialize-instance.ts` (`claimTarget`);
   - `packages/fig/src/document/materialize.ts` (the load's record of the copies it left out);
   - `packages/fig/src/node-change/convert.ts` (`resolveNodeType`, now exported);
   - `packages/core/src/io/formats/fig/export/patch/index.ts` (`planRecords`, `addUnrecordedDescendants`);
-  - `packages/fig/src/node-change/instance/geometry.ts` (`instanceExportAddress`, `layerCopying`);
-  - `tests/integration/collab/cloud/component-detach.test.ts` and `component-detach-overrides.test.ts`, and their
-    helper, `tests/helpers/collab/component-tabs.ts`;
+  - `packages/fig/src/node-change/instance/geometry.ts` (`instanceExportAddress`, `staleCopyNames`, `keptLinks`);
+  - `packages/fig/src/node-change/export/override-claims.ts` (`serializeRuntimePropertyOverrides`, one map of the
+    copies built before a detach for an instance's claims);
+  - `tests/integration/collab/cloud/component-detach.test.ts`, `component-detach-overrides.test.ts` and
+    `component-detach-pairs.test.ts`, and their helper, `tests/helpers/collab/component-tabs.ts`;
   - `packages/fig/tests/instance-overrides/materialize.test.ts`.
 
 ## The seventh change: the agent server keeps up to 32 sessions

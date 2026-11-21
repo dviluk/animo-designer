@@ -11,11 +11,18 @@ import { ownsSlotContent } from '@open-pencil/scene-graph/slots'
 
 type ResolveGuid = (id: string) => GUID | undefined
 
+/**
+ * For each copy built before a detach that a save's addresses pass through, the layer each layer in
+ * it names (`staleCopyNames`). One save's addresses share it, so each such copy is walked once.
+ */
+export type StaleCopies = Map<string, ReadonlyMap<string, string | undefined>>
+
 export function instanceExportAddress(
   graph: SceneGraph,
   owner: SceneNode,
   target: SceneNode,
-  resolveGuid: ResolveGuid
+  resolveGuid: ResolveGuid,
+  stale: StaleCopies = new Map()
 ): GUID[] | undefined {
   if (target.id === owner.id && owner.componentId) {
     const guid = resolveGuid(owner.componentId)
@@ -32,8 +39,9 @@ export function instanceExportAddress(
   let scope = owner
   let detached: SceneNode | undefined
   for (const node of [...boundaries, target]) {
-    const copied = definitionSource(graph, sourceOf(scope, node))
-    const sourceId = (detached && copied && layerCopying(graph, detached, copied)) ?? copied
+    const sourceId = detached
+      ? staleCopyNames(graph, scope, detached, stale).get(node.id)
+      : definitionSource(graph, sourceOf(scope, node))
     if (!sourceId) return undefined
     const guid = resolveGuid(sourceId)
     if (!guid) return undefined
@@ -46,30 +54,64 @@ export function instanceExportAddress(
 }
 
 /**
- * The layer of a detached instance that copies `copied`, a layer of the component it was an
- * instance of. A copy built before the detach still names that component's layers, while the save
- * writes the detached layer's own: each names its source in `componentId`, and an instance it
- * held in the link the detached layer kept for it.
+ * The layer each layer of `copy` names in a save, by its id, where `copy` is a copy built before
+ * `detached`, its source, was detached: each layer it holds, down to each instance inside it. A
+ * layer the copy built then names a layer of the old component, which the saved file no longer
+ * holds, so it names the detached layer's own layer linked to that one instead. It keeps the old
+ * name where none is linked, or where another layer of the copy names that one itself, as a layer
+ * the sync added after the detach does: two layers with one address make the save fail.
  */
-function layerCopying(graph: SceneGraph, detached: SceneNode, copied: string): string | undefined {
-  const visit = (parentId: string): string | undefined => {
+function staleCopyNames(
+  graph: SceneGraph,
+  copy: SceneNode,
+  detached: SceneNode,
+  stale: StaleCopies
+): ReadonlyMap<string, string | undefined> {
+  const known = stale.get(copy.id)
+  if (known) return known
+  const copied = new Map<string, string | undefined>()
+  const visit = (parentId: string): void => {
     for (const child of graph.getChildren(parentId)) {
-      const isInstance = child.type === 'INSTANCE'
-      const link = isInstance
-        ? getInstanceOverride(
-            detached.instanceOverrides,
-            detached.id,
-            child.id,
-            'sourceComponentId'
-          )
-        : child.componentId
-      if (link === copied) return child.id
-      const inside = isInstance ? undefined : visit(child.id)
-      if (inside) return inside
+      copied.set(child.id, definitionSource(graph, sourceOf(copy, child)))
+      if (child.type !== 'INSTANCE') visit(child.id)
     }
-    return undefined
   }
-  return visit(detached.id)
+  visit(copy.id)
+  const linked = keptLinks(graph, detached)
+  const taken = new Set(copied.values())
+  const names = new Map<string, string | undefined>()
+  for (const [id, source] of copied) {
+    const own = source === undefined ? undefined : linked.get(source)
+    if (own !== undefined && !taken.has(own)) {
+      taken.add(own)
+      names.set(id, own)
+    } else names.set(id, source)
+  }
+  stale.set(copy.id, names)
+  return names
+}
+
+/**
+ * The detached layer's own layers, by the layer of the old component each kept the link to
+ * (`copiedLayerLinks`, `packages/scene-graph/src/instances/index.ts`). A layer made after the detach
+ * has no link. Two layers linked to one source give it none, so neither takes the other's changes.
+ */
+function keptLinks(graph: SceneGraph, detached: SceneNode): Map<string, string | undefined> {
+  const linked = new Map<string, string | undefined>()
+  const visit = (parentId: string): void => {
+    for (const child of graph.getChildren(parentId)) {
+      const link = getInstanceOverride(
+        detached.instanceOverrides,
+        detached.id,
+        child.id,
+        'sourceComponentId'
+      )
+      if (typeof link === 'string') linked.set(link, linked.has(link) ? undefined : child.id)
+      if (child.type !== 'INSTANCE') visit(child.id)
+    }
+  }
+  visit(detached.id)
+  return linked
 }
 
 function sourceOf(scope: SceneNode, node: SceneNode): string | null {
@@ -115,9 +157,10 @@ export function snapshotInstanceGeometry(
     entries.set(id, { ...entries.get(id), ...entry })
   }
   const visited = new Set<string>()
+  const stale: StaleCopies = new Map()
   const visit = (node: SceneNode): void => {
     for (const child of graph.getChildren(node.id)) {
-      const path = instanceExportAddress(graph, owner, child, resolveGuid)
+      const path = instanceExportAddress(graph, owner, child, resolveGuid, stale)
       if (!path)
         throw new Error(`Missing instance geometry address for ${child.id} under ${owner.id}`)
       const id = key(path)
