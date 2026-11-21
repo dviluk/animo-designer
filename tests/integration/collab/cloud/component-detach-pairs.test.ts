@@ -3,7 +3,8 @@
  * component is detached, an instance read before the detach keeps across the save what it changed
  * inside each, though both name Pip as their component. When both are detached in Pair, a change
  * saved after a reopen still saves and opens: the save gives the detached layers no keys, which
- * would be one key for two layers.
+ * would be one key for two layers. A layer moved from one into the other doesn't take the changes
+ * of the layer it lands beside.
  */
 import 'fake-indexeddb/auto'
 import { afterEach, describe, expect, test } from 'bun:test'
@@ -11,6 +12,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { exportFigFile } from '@open-pencil/core/io/formats/fig'
 import { initCodec } from '@open-pencil/kiwi/fig/codec'
 import { SceneGraph } from '@open-pencil/scene-graph'
+import { getInstanceOverride } from '@open-pencil/scene-graph/instances/overrides'
 
 import { createEditorStore, type EditorStore } from '@/app/editor/session'
 
@@ -37,9 +39,10 @@ afterEach(runCleanups)
  * Cover, Screens and Parts. Parts holds Pip, a blue Core and a Label; Pair, holding PipL and PipR,
  * two instances of Pip; and Shelf, holding PairIn, an instance of Pair. Screens holds Duo, an
  * instance of Pair, and Row, an instance of Shelf, which fills Core red inside PipL, and hides PipR
- * and changes its Label.
+ * and changes its Label. With `duoChanged`, Duo also fills Core red inside both, and changes the
+ * Label inside PipR.
  */
-async function pairedFile(): Promise<Uint8Array> {
+async function pairedFile(duoChanged = false): Promise<Uint8Array> {
   await initCodec()
   const graph = new SceneGraph()
   const [cover] = graph.getPages()
@@ -75,11 +78,38 @@ async function pairedFile(): Promise<Uint8Array> {
   author.updateNodeWithUndo(childNamed(graph, left, 'Core').id, { fills: [RED] }, 'Fill')
   author.updateNodeWithUndo(childNamed(graph, right, 'Label').id, { text: 'Changed' }, 'Text')
   author.updateNodeWithUndo(right, { visible: false }, 'Hide')
+  if (duoChanged) {
+    const duo = topLayer(graph, 'Screens', 'Duo').id
+    for (const pip of ['PipL', 'PipR']) {
+      const core = childNamed(graph, childNamed(graph, duo, pip).id, 'Core')
+      author.updateNodeWithUndo(core.id, { fills: [RED] }, 'Fill')
+    }
+    const label = childNamed(graph, childNamed(graph, duo, 'PipR').id, 'Label')
+    author.updateNodeWithUndo(label.id, { text: 'Changed' }, 'Text')
+  }
   await settle()
   const bytes = await exportFigFile(graph)
   author.preparationController.dispose()
   return bytes
 }
+
+/** A copy of Pip's Core, filled with `fill`. */
+const coreLook = (fill: string): Look => ({
+  name: 'Core',
+  type: 'ELLIPSE',
+  visible: true,
+  fill,
+  children: []
+})
+
+/** A copy of Pip's Label, reading `text`. */
+const labelLook = (text: string): Look => ({
+  name: 'Label',
+  type: 'TEXT',
+  visible: true,
+  text,
+  children: []
+})
 
 /** A copy of Pip, `name`, of `type`, shown or not, with its Core's fill and its Label's words. */
 const pipLook = (
@@ -92,10 +122,7 @@ const pipLook = (
   name,
   type,
   visible,
-  children: [
-    { name: 'Core', type: 'ELLIPSE', visible: true, fill, children: [] },
-    { name: 'Label', type: 'TEXT', visible: true, text, children: [] }
-  ]
+  children: [coreLook(fill), labelLook(text)]
 })
 
 /** The Row, its PairIn of `type`, with Core red inside PipL, and PipR hidden with its Label changed. */
@@ -167,8 +194,8 @@ const overridesIn = (tab: EditorStore, name: string): number => {
  * PipL and PipR detached in Pair, saved and reopened; then Duo fills Core red inside PipL and
  * changes the Label inside PipR, saved and reopened on every page. Each of Pip's layers has a copy
  * in both detached layers, so a key the save copied from Pip onto them would name two layers, and
- * that second save would fail on Duo's paths. The detach's links live on each detached layer until
- * the save, which writes no frame's overrides, so the reopened layers hold none: no copy built
+ * that second save would fail on Duo's paths. The detach's links stay on each detached layer in the
+ * window. The save writes no frame's overrides, so the reopened layers hold none: no copy built
  * before the detach is left to need them.
  */
 describe('two instances of one component detached inside a component, then a change saved after a reopen', () => {
@@ -207,6 +234,60 @@ describe('two instances of one component detached inside a component, then a cha
         children: [
           pipLook('PipL', 'FRAME', true, 'red', 'Pip'),
           pipLook('PipR', 'FRAME', true, 'blue', 'Again')
+        ]
+      })
+    })
+  }
+})
+
+/**
+ * PipL and PipR detached in Pair, then PipR's Core moved into PipL and sent to the back, below
+ * PipL's own Core. The moved Core keeps its link in PipR, so in PipL it has none, though it names
+ * Pip's Core as its component as PipL's own does. Duo, read before the detach, keeps across the save
+ * the red on PipL's own Core. The moved Core shows as Pip has it, and Duo's red on it goes with the
+ * move, while Duo's Label inside PipR stays.
+ */
+describe('a layer moved from one detached copy of a component into another, which an instance on a page already shown overrides inside both', () => {
+  for (const reader of READERS) {
+    test(`one window reading on ${reader}: shows Screens, detaches PipL and PipR in Pair, moves PipR's Core into PipL below its own, and saves`, async () => {
+      const tab = await tabReading(reader, await pairedFile(true))
+      await showPage(tab, 'Screens')
+      await settle()
+      detach(tab, 'Pair', 'PipL')
+      await settle()
+      detach(tab, 'Pair', 'PipR')
+      await settle()
+      const own = childNamed(tab.graph, inComponent(tab, 'Pair', 'PipL').id, 'Core')
+      const moved = childNamed(tab.graph, inComponent(tab, 'Pair', 'PipR').id, 'Core')
+      tab.reparentNodes([moved.id], inComponent(tab, 'Pair', 'PipL').id)
+      tab.select([moved.id])
+      tab.sendToBack()
+      await settle()
+
+      const saved = await save(tab)
+
+      const left = inComponent(tab, 'Pair', 'PipL')
+      const link = (id: string) =>
+        getInstanceOverride(left.instanceOverrides, left.id, id, 'sourceComponentId')
+      expect(tab.graph.getChildren(left.id).map((layer) => layer.id)).toEqual([
+        moved.id,
+        own.id,
+        childNamed(tab.graph, left.id, 'Label').id
+      ])
+      expect(link(own.id)).toBeString()
+      expect(link(moved.id)).toBeUndefined()
+      expect(lookOn(saved, 'Screens', 'Duo')).toEqual({
+        name: 'Duo',
+        type: 'INSTANCE',
+        visible: true,
+        children: [
+          {
+            name: 'PipL',
+            type: 'FRAME',
+            visible: true,
+            children: [coreLook('blue'), coreLook('red'), labelLook('Pip')]
+          },
+          { name: 'PipR', type: 'FRAME', visible: true, children: [labelLook('Changed')] }
         ]
       })
     })

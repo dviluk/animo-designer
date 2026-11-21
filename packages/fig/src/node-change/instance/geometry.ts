@@ -12,8 +12,9 @@ import { ownsSlotContent } from '@open-pencil/scene-graph/slots'
 type ResolveGuid = (id: string) => GUID | undefined
 
 /**
- * For each copy built before a detach that a save's addresses pass through, the layer each layer in
- * it names (`staleCopyNames`). One save's addresses share it, so each such copy is walked once.
+ * For each copy built before a detach that an instance's addresses pass through, the layer each
+ * layer in it names (`staleCopyNames`). The addresses of one instance's claims share one, and those
+ * of its geometry another, so each such copy is walked once for each.
  */
 export type StaleCopies = Map<string, ReadonlyMap<string, string | undefined>>
 

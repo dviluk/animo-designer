@@ -162,10 +162,12 @@ secrets.
       overrides, so a reopen drops them, and no copy built before the detach is then left to need them.
     - **The save follows only those links,** never `componentId`, which Duplicate copies onto the new layer. A layer
       put into the detached layer after the detach, by Duplicate or by a paste, has a new id and so no link: the
-      original keeps the change, wherever the copy sits. Two layers linked to one source give it none.
+      original keeps the change, wherever the copy sits. A layer moved in from another detached layer keeps its link
+      in that one, so it has none here either. Two layers linked to one source give it none.
     - **The save never sends a path onto a layer that another layer of the same copy names itself,** as a layer the
       window added to that copy after the detach does: two layers with one address make the save fail (`Ambiguous
-      instance geometry address`). Such a change keeps its old path. A save maps each such copy once.
+      instance geometry address`). Such a change keeps its old path. A save maps each such copy once for an
+      instance's claims and once for its geometry.
 
     The reopened instance keeps those changes, in one window as in two. The save adds no override key: two detached
     copies of one component inside one component would carry the same keys, and a change saved after a reopen then
@@ -180,6 +182,10 @@ secrets.
     out of it.** The save writes that change's path as before the detach, and the reopened design skips a path that
     finds no layer, with no notice. The window may show the change until a reopen. A deleted layer takes its changes
     with it, as anywhere, and a moved one shows as the component has it.
+  - **"Create component" on a layer detached inside a component loses, at the save, what an instance read before the
+    detach changed inside that layer.** The window still shows it, and the hide on the layer itself stays. The code
+    before this fix loses it too. A person reopens the design after making such a layer a component, and sets those
+    changes again.
   - **Upstream's sync resets the inner sizes of the instances already read.** Whenever a layer inside a component
     changes, a plain rename included, the sync puts the component's sizes over the sizes Figma derived for those
     instances' inner layers, in the window and in the save: a progress bar's fill takes the component's width. A
