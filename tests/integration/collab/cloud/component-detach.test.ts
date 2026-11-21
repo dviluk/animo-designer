@@ -3,10 +3,10 @@
  * detach, a group turned into a frame or a frame turned into a group; and a layer deleted inside a
  * component. Later pages with an instance of that component show the layer as the component now
  * has it, every save goes through, and the saved file reopens with the layer and all it holds, in
- * one window and in two. Such an instance loses what it changed on that layer or inside it, and
- * keeps what it changed on the component's other layers. An instance read before a detach keeps
- * what it changed inside the detached layer in the window, and loses it in the save: a written
- * limit.
+ * one window and in two. Such an instance loses what it changed on that layer, and inside it unless
+ * the change was a detach, and keeps what it changed on the component's other layers. After a
+ * detach, every instance keeps what it changed inside the detached layer across a reopen: one read
+ * before it, one read after it, and one drawn in the same session.
  */
 import 'fake-indexeddb/auto'
 import { afterEach, describe, expect, test } from 'bun:test'
@@ -302,18 +302,11 @@ const BADGE_LAYERS = {
 type BadgeLayer = keyof typeof BADGE_LAYERS
 
 /**
- * Cover; Parts with Pip and Badge, which holds an instance of Pip, a group and a frame, each with a
- * blue shape and a text inside; and Screens and More, each with a Tag. The Tag on each page that
- * `overriding` names hides each of the three, fills the shape inside it red and changes the text
- * inside it. Showing Screens builds Badge and Pip, and nothing reads More until a tab shows it or
- * a save reads it.
+ * Screens, Parts and More after the graph's pages: Parts with Pip and Badge, which holds an instance
+ * of Pip, a group and a frame, each with a blue shape and a text inside; and Screens and More, each
+ * with a Tag, returned by page.
  */
-async function overriddenFile(overriding: readonly string[] = ['More']): Promise<Uint8Array> {
-  await initCodec()
-  const graph = new SceneGraph()
-  const [cover] = graph.getPages()
-  if (!cover) throw new Error('Expected a page')
-  graph.updateNode(cover.id, { name: 'Cover' })
+function drawBadge(graph: SceneGraph): Map<string, SceneNode> {
   const screens = graph.addPage('Screens')
   const parts = graph.addPage('Parts')
   const more = graph.addPage('More')
@@ -333,12 +326,26 @@ async function overriddenFile(overriding: readonly string[] = ['More']): Promise
   const box = graph.createNode('FRAME', badge.id, { name: 'Box', x: 100, width: 40, height: 20 })
   graph.createNode('RECTANGLE', box.id, { name: 'Mark', width: 8, height: 8, fills: [BLUE] })
   graph.createNode('TEXT', box.id, { name: 'Word', x: 10, width: 30, height: 12, text: 'Word' })
-  const tagOn = new Map([
-    ['Screens', graph.createInstance(badge.id, screens.id, { name: 'Tag' })],
-    ['More', graph.createInstance(badge.id, more.id, { name: 'Tag' })]
-  ])
-  // The editor's own edits, so each one is an override the Tag holds.
-  const author = createEditorStore(graph)
+  const tagOn = new Map<string, SceneNode>()
+  for (const page of [screens, more]) {
+    const tag = graph.createInstance(badge.id, page.id, { name: 'Tag' })
+    if (!tag) throw new Error(`Expected the Tag on ${page.name}`)
+    tagOn.set(page.name, tag)
+  }
+  return tagOn
+}
+
+/**
+ * The author's own edits, so each one is an override the Tag holds: the Tag on each page that
+ * `overriding` names hides each of Badge's three layers, fills the shape inside it red and changes
+ * the text inside it.
+ */
+function overrideTags(
+  author: EditorStore,
+  tagOn: ReadonlyMap<string, SceneNode>,
+  overriding: readonly string[]
+): void {
+  const { graph } = author
   for (const page of overriding) {
     const tag = tagOn.get(page)
     if (!tag) throw new Error(`Expected the Tag on ${page}`)
@@ -353,6 +360,28 @@ async function overriddenFile(overriding: readonly string[] = ['More']): Promise
       author.updateNodeWithUndo(layer.id, { visible: false }, 'Hide')
     }
   }
+}
+
+/** A graph of one page, Cover. */
+function coverGraph(): SceneGraph {
+  const graph = new SceneGraph()
+  const [cover] = graph.getPages()
+  if (!cover) throw new Error('Expected a page')
+  graph.updateNode(cover.id, { name: 'Cover' })
+  return graph
+}
+
+/**
+ * Cover, then Badge and its Tags (`drawBadge`), the Tag on each page that `overriding` names
+ * changed (`overrideTags`). Showing Screens builds Badge and Pip, and nothing reads More until a tab
+ * shows it or a save reads it.
+ */
+async function overriddenFile(overriding: readonly string[] = ['More']): Promise<Uint8Array> {
+  await initCodec()
+  const graph = coverGraph()
+  const tagOn = drawBadge(graph)
+  const author = createEditorStore(graph)
+  overrideTags(author, tagOn, overriding)
   await settle()
   const bytes = await exportFigFile(graph)
   author.preparationController.dispose()
@@ -437,15 +466,21 @@ function detachPipInOf(tab: EditorStore): void {
   tab.detachInstance()
 }
 
+/**
+ * A Tag after PipIn's detach: PipIn as Badge's frame, with every change inside it and on the other
+ * two layers, and without the hide on PipIn, which a layer whose type changed loses.
+ */
+const detachedTag = tagWith(
+  { ...badgeLayer('PipIn', 'FRAME', true), visible: true },
+  badgeLayer('Cap', 'GROUP', true),
+  badgeLayer('Box', 'FRAME', true)
+)
+
 describe('a change inside a component that an instance on a page not yet shown overrides, on the changed layer and inside it', () => {
   const detachPipIn = {
     steps: 'detaches PipIn',
     change: detachPipInOf,
-    tag: tagWith(
-      badgeLayer('PipIn', 'FRAME', false),
-      badgeLayer('Cap', 'GROUP', true),
-      badgeLayer('Box', 'FRAME', true)
-    )
+    tag: detachedTag
   }
   const changes = [
     detachPipIn,
@@ -513,8 +548,9 @@ describe('a change inside a component that an instance on a page not yet shown o
 
 /**
  * The window keeps a Tag read before the detach as it was, PipIn still an instance with every
- * change. The save keeps the hide on PipIn and every change to the other two layers, and loses the
- * changes inside PipIn: its layers are saved as new ones, which the Tag's paths don't name.
+ * change. The save keeps the hide on PipIn, every change inside it and every change to the other
+ * two layers: PipIn's layers are saved as new ones, under the keys of the layers of Pip they
+ * copied, which the Tag's paths name.
  */
 const shownTag = tagWith(
   badgeLayer('PipIn', 'INSTANCE', true),
@@ -522,12 +558,12 @@ const shownTag = tagWith(
   badgeLayer('Box', 'FRAME', true)
 )
 const savedShownTag = tagWith(
-  { ...badgeLayer('PipIn', 'FRAME', false), visible: false },
+  badgeLayer('PipIn', 'FRAME', true),
   badgeLayer('Cap', 'GROUP', true),
   badgeLayer('Box', 'FRAME', true)
 )
 
-describe('a detach inside a component that an instance on a page already shown overrides inside the detached layer, a written limit', () => {
+describe('a detach inside a component that an instance on a page already shown overrides inside the detached layer', () => {
   for (const reader of READERS) {
     test(`one window reading on ${reader}: shows Screens, detaches PipIn in Badge, and saves`, async () => {
       const tab = await tabReading(reader, await overriddenFile(['Screens']))
@@ -553,6 +589,33 @@ describe('a detach inside a component that an instance on a page already shown o
       expect(lookOn(bob.graph, 'Screens', 'Tag')).toEqual(shownTag)
       expect(lookOn(bobs, 'Screens', 'Tag')).toEqual(savedShownTag)
       expect(lookOn(anns, 'Screens', 'Tag')).toEqual(savedShownTag)
+    })
+  }
+})
+
+/** A stored file holding only Cover. */
+async function coverFile(): Promise<Uint8Array> {
+  await initCodec()
+  return exportFigFile(coverGraph())
+}
+
+/**
+ * Pip, Badge and the Tags drawn in the tab, so no layer of them has a key in a file yet when PipIn
+ * is detached. The save keeps the Tag's changes inside PipIn and loses the hide on it, as for a Tag
+ * read after the detach.
+ */
+describe('a detach inside a component drawn in the same session, which an instance drawn with it overrides inside the detached layer', () => {
+  for (const reader of READERS) {
+    test(`one window reading on ${reader}: draws Badge and its Tags, changes the Tag on Screens, detaches PipIn in Badge, and saves`, async () => {
+      const tab = await tabReading(reader, await coverFile())
+      overrideTags(tab, drawBadge(tab.graph), ['Screens'])
+      await settle()
+      detachPipInOf(tab)
+      await settle()
+
+      const saved = await save(tab)
+
+      expect(lookOn(saved, 'Screens', 'Tag')).toEqual(detachedTag)
     })
   }
 })
