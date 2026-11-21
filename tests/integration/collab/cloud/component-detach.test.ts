@@ -11,21 +11,27 @@
 import 'fake-indexeddb/auto'
 import { afterEach, describe, expect, test } from 'bun:test'
 
-import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
+import { exportFigFile } from '@open-pencil/core/io/formats/fig'
 import { initCodec } from '@open-pencil/kiwi/fig/codec'
 import { type Fill, SceneGraph, type SceneNode } from '@open-pencil/scene-graph'
 
 import { createEditorStore, type EditorStore } from '@/app/editor/session'
 
-import { parseFigFileViaWorker } from '#core/io/formats/fig/read'
-import { releaseFigPopulationWorker } from '#core/kiwi/fig/population/client'
-
-import { cleanups, openRoom, runCleanups, startRelay, until } from '#tests/helpers/collab/cloud'
+import { runCleanups } from '#tests/helpers/collab/cloud'
+import {
+  bobAndAnn,
+  childNamed,
+  inComponent,
+  pageNamed,
+  READERS,
+  save,
+  settle,
+  showPage,
+  tabReading,
+  topLayer
+} from '#tests/helpers/collab/component-tabs'
 
 afterEach(runCleanups)
-
-const READERS = ['the reader worker', 'this thread'] as const
-type Reader = (typeof READERS)[number]
 
 /**
  * Cover; Screens with three frames, a Bar, a Solo dot and a Tile; Parts with the bar's component,
@@ -76,58 +82,6 @@ async function storedFile(): Promise<Uint8Array> {
   return exportFigFile(graph)
 }
 
-/** A tab that opened the stored file through a reader worker, as the app does, its first page read. */
-async function workerTab(bytes: Uint8Array): Promise<EditorStore> {
-  const graph = await parseFigFileViaWorker(Uint8Array.from(bytes).buffer, {
-    populate: 'first-page'
-  })
-  const store = createEditorStore(graph)
-  cleanups.push(() => {
-    store.preparationController.dispose()
-    releaseFigPopulationWorker(graph)
-  })
-  return store
-}
-
-/** A tab whose reader is this thread, its first page shown. */
-async function threadTab(bytes: Uint8Array): Promise<EditorStore> {
-  const store = createEditorStore(
-    await parseFigFile(Uint8Array.from(bytes).buffer, { populate: 'none' })
-  )
-  cleanups.push(() => store.preparationController.dispose())
-  const [first] = store.graph.getPages()
-  if (!first) throw new Error('Expected a page')
-  await showPage(store, first.name)
-  return store
-}
-
-const tabReading = (reader: Reader, bytes: Uint8Array) =>
-  reader === 'the reader worker' ? workerTab(bytes) : threadTab(bytes)
-
-function pageNamed(graph: SceneGraph, name: string): string {
-  const page = graph.getPages().find((candidate) => candidate.name === name)
-  if (!page) throw new Error(`Expected a page named ${name}`)
-  return page.id
-}
-
-/** The editor's own page switch: the app's waits for a canvas to show the page, and a test has none. */
-async function showPage(store: EditorStore, name: string) {
-  const prepared = await store.preparePage(pageNamed(store.graph, name))
-  if (prepared) store.commitPageSwitch(prepared)
-}
-
-/** Lets the room carry what the last step sent, both ways. */
-async function settle() {
-  for (let round = 0; round < 5; round++) {
-    await new Promise((resolve) => {
-      setTimeout(resolve, 20)
-    })
-  }
-}
-
-const topLayerCount = (graph: SceneGraph, page: string) =>
-  graph.getChildren(pageNamed(graph, page)).length
-
 interface Layer {
   name: string
   type: string
@@ -145,27 +99,8 @@ function tree(graph: SceneGraph, node: SceneNode): Layer {
   }
 }
 
-/** The top layer named `name` on a page, the last one where a page holds several. */
-function topLayer(graph: SceneGraph, page: string, name: string): SceneNode {
-  const node = graph
-    .getChildren(pageNamed(graph, page))
-    .findLast((candidate) => candidate.name === name)
-  if (!node) throw new Error(`Expected ${name} on ${page}`)
-  return node
-}
-
 const layerOn = (graph: SceneGraph, page: string, name: string): Layer =>
   tree(graph, topLayer(graph, page, name))
-
-function childNamed(graph: SceneGraph, parentId: string, name: string): SceneNode {
-  const child = graph.getChildren(parentId).find((node) => node.name === name)
-  if (!child) throw new Error(`Expected ${name}`)
-  return child
-}
-
-/** A layer of the component named `component` on Parts, in its copy on top. */
-const inComponent = (tab: EditorStore, component: string, name: string): SceneNode =>
-  childNamed(tab.graph, topLayer(tab.graph, 'Parts', component).id, name)
 
 const layer = (name: string, type: string, size: string, children: Layer[] = []): Layer => ({
   name,
@@ -213,11 +148,6 @@ function detachDot(tab: EditorStore, rename?: string): void {
   tab.select([dot.id])
   tab.detachInstance()
   if (rename) tab.updateNodeWithUndo(dot.id, { name: rename }, 'Rename')
-}
-
-/** The saved file of the tab's graph, reopened whole. */
-async function save(tab: EditorStore): Promise<SceneGraph> {
-  return parseFigFile(Uint8Array.from(await exportFigFile(tab.graph)).buffer, { populate: 'all' })
 }
 
 describe('a detach inside a component the tab built, then a page with an instance of it', () => {
@@ -284,22 +214,7 @@ describe('a detach inside a component the tab built, then a page with an instanc
     })
 
     test(`two windows, Bob reading on ${reader}: Bob shows Screens, Ann joins, shows Parts, detaches and renames the dot in the copy on top, and each shows More and saves`, async () => {
-      const relay = await startRelay()
-      const documentId = crypto.randomUUID()
-      const file = await storedFile()
-      const bob = await tabReading(reader, file)
-      const bobRoom = openRoom(relay, bob, { documentId, name: 'Bob' })
-      await until(() => bobRoom.session.roomHasDocument())
-      await showPage(bob, 'Screens')
-      await settle()
-      const shown = topLayerCount(bob.graph, 'Screens')
-      const ann = await threadTab(file)
-      const annRoom = openRoom(relay, ann, { documentId, name: 'Ann' })
-      await until(() => annRoom.session.hasDocument.value && annRoom.session.peers.value.length > 0)
-      await until(() => topLayerCount(ann.graph, 'Screens') >= shown)
-      await settle()
-      await showPage(ann, 'Parts')
-      await settle()
+      const { bob, ann } = await bobAndAnn(reader, await storedFile())
       detachDot(ann, 'Badge')
       await settle()
       await showPage(bob, 'More')
@@ -516,13 +431,16 @@ const tagWith = (...layers: Look[]): Look => ({
   children: layers
 })
 
+/** Detaches, with the editor's own action, PipIn in the copy of Badge on top. */
+function detachPipInOf(tab: EditorStore): void {
+  tab.select([inComponent(tab, 'Badge', 'PipIn').id])
+  tab.detachInstance()
+}
+
 describe('a change inside a component that an instance on a page not yet shown overrides, on the changed layer and inside it', () => {
   const detachPipIn = {
     steps: 'detaches PipIn',
-    change: (tab: EditorStore) => {
-      tab.select([inComponent(tab, 'Badge', 'PipIn').id])
-      tab.detachInstance()
-    },
+    change: detachPipInOf,
     tag: tagWith(
       badgeLayer('PipIn', 'FRAME', false),
       badgeLayer('Cap', 'GROUP', true),
@@ -593,12 +511,6 @@ describe('a change inside a component that an instance on a page not yet shown o
   }
 })
 
-/** Detaches, with the editor's own action, PipIn in the copy of Badge on top. */
-function detachPipInOf(tab: EditorStore): void {
-  tab.select([inComponent(tab, 'Badge', 'PipIn').id])
-  tab.detachInstance()
-}
-
 /**
  * The window keeps a Tag read before the detach as it was, PipIn still an instance with every
  * change. The save keeps the hide on PipIn and every change to the other two layers, and loses the
@@ -631,22 +543,7 @@ describe('a detach inside a component that an instance on a page already shown o
     })
 
     test(`two windows, Bob reading on ${reader}: Bob shows Screens, Ann joins, shows Parts and detaches PipIn in Badge, and each saves`, async () => {
-      const relay = await startRelay()
-      const documentId = crypto.randomUUID()
-      const file = await overriddenFile(['Screens'])
-      const bob = await tabReading(reader, file)
-      const bobRoom = openRoom(relay, bob, { documentId, name: 'Bob' })
-      await until(() => bobRoom.session.roomHasDocument())
-      await showPage(bob, 'Screens')
-      await settle()
-      const shown = topLayerCount(bob.graph, 'Screens')
-      const ann = await threadTab(file)
-      const annRoom = openRoom(relay, ann, { documentId, name: 'Ann' })
-      await until(() => annRoom.session.hasDocument.value && annRoom.session.peers.value.length > 0)
-      await until(() => topLayerCount(ann.graph, 'Screens') >= shown)
-      await settle()
-      await showPage(ann, 'Parts')
-      await settle()
+      const { bob, ann } = await bobAndAnn(reader, await overriddenFile(['Screens']))
       detachPipInOf(ann)
       await settle()
 

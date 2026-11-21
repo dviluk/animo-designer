@@ -190,7 +190,8 @@ secrets.
   - `packages/fig/src/document/materialize.ts` (the load's record of the copies it left out);
   - `packages/fig/src/node-change/convert.ts` (`resolveNodeType`, now exported);
   - `packages/core/src/io/formats/fig/export/patch/index.ts` (`planRecords`, `addUnrecordedDescendants`);
-  - `tests/integration/collab/cloud/component-detach.test.ts`;
+  - `tests/integration/collab/cloud/component-detach.test.ts` and its helper,
+    `tests/helpers/collab/component-tabs.ts`;
   - `packages/fig/tests/instance-overrides/materialize.test.ts`.
 
 ## The seventh change: the agent server keeps up to 32 sessions
